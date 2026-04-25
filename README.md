@@ -1,6 +1,6 @@
 # DonHash v1.1
 
-**Advanced Hash Detector & Cracker** — 500+ hash types across 30 categories, with multi-format output support.
+**Advanced Hash Detector & Cracker** — 500+ hash types across 30 categories, multi-threaded cracking, and multi-format output.
 
 ![Python](https://img.shields.io/badge/Python-3.8+-blue?logo=python&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green)
@@ -16,27 +16,28 @@
 ## Features
 
 - **500+ hash types** across 30 detection categories
-- **Multi-threaded cracking** with configurable thread count (1-32)
+- **Multi-threaded cracking** with configurable thread count (1-100, default: 5)
 - **Auto-detection** of hash types by length, prefix, and character set
 - **Dictionary attack** with customizable wordlist (default: rockyou.txt)
-- **Compressed wordlist support** — handles `.gz` files transparently
 - **Batch mode** — crack multiple hashes from a file at once
-- **Multi-format output** — save results in 7 formats: `txt`, `json`, `csv`, `html`, `xml`, `markdown`, `yaml`
-- **Timeout support** — set max cracking time per hash
+- **Multi-format output** — save results in 6 formats: `txt`, `json`, `csv`, `html`, `xml`, `md`
+- **Auto-format detection** — output format inferred from file extension
 - **Pure-Python MD4** — NTLM/NT cracking works even on OpenSSL 3.0+
 - **Metasploit-style splash screen** with cyberpunk aesthetic
 
 ## What's New in v1.1
 
+- **Fixed splash screen** — ASCII art now clearly displays "DONHASH"
+- **`-T` / `--threads` flag** — User-specified thread count from 1-100 (default: 5)
 - **`-o` / `--output` flag** — Write cracking results to a file
-- **`--format` flag** — Choose output format from 7 supported formats:
+- **`--format` flag** — Choose output format from 6 supported formats:
   - `txt` — Plain text with headers (default)
   - `json` — Structured JSON with metadata
   - `csv` — Comma-separated values (spreadsheet-friendly)
   - `html` — Styled HTML report with dark cyberpunk theme
   - `xml` — XML document with structured results
-  - `markdown` — GitHub-flavored Markdown table
-  - `yaml` — YAML serialization
+  - `md` — GitHub-flavored Markdown table
+- Auto-detection of format from file extension (e.g., `-o results.json` → JSON)
 - Version bumped to 1.1
 
 ## Supported Hash Categories
@@ -91,44 +92,61 @@ python3 donhash.py -H 5f4dcc3b5aa765d61d8327deb882cf99 -w my_wordlist.txt
 python3 donhash.py -H 5f4dcc3b5aa765d61d8327deb882cf99 -t MD5
 
 # Multi-threaded cracking with verbose output
-python3 donhash.py -H 5f4dcc3b5aa765d61d8327deb882cf99 -T 8 -v
+python3 donhash.py -H 5f4dcc3b5aa765d61d8327deb882cf99 -T 20 -v
 ```
+
+### Threading Control (v1.1+)
+
+Control the number of threads used for cracking. Default is 5 threads. Range: 1-100.
+
+```bash
+# Use 10 threads
+python3 donhash.py -H 5f4dcc3b5aa765d61d8327deb882cf99 -T 10
+
+# Maximum threads for speed
+python3 donhash.py -H 5f4dcc3b5aa765d61d8327deb882cf99 -T 100
+
+# Single-threaded (for debugging or crypt-type hashes)
+python3 donhash.py -H 5f4dcc3b5aa765d61d8327deb882cf99 -T 1
+```
+
+> **Note:** Crypt-type hashes (bcrypt, MD5-Crypt, SHA-512-Crypt, etc.) automatically use single-threaded mode because they require the full hash context for `crypt.crypt()`.
 
 ### Output to File (v1.1+)
 
 Save cracking results to a file in your preferred format:
 
 ```bash
-# Save as plain text (default)
+# Save as plain text (auto-detected from .txt extension)
 python3 donhash.py -H 5f4dcc3b5aa765d61d8327deb882cf99 -o results.txt
 
-# Save as JSON
-python3 donhash.py -H 5f4dcc3b5aa765d61d8327deb882cf99 -o results.json --format json
+# Save as JSON (auto-detected from .json extension)
+python3 donhash.py -H 5f4dcc3b5aa765d61d8327deb882cf99 -o results.json
 
 # Save as CSV (for spreadsheet import)
-python3 donhash.py -H 5f4dcc3b5aa765d61d8327deb882cf99 -o results.csv --format csv
+python3 donhash.py -H 5f4dcc3b5aa765d61d8327deb882cf99 -o results.csv
 
 # Save as HTML report (dark themed, styled)
-python3 donhash.py -H 5f4dcc3b5aa765d61d8327deb882cf99 -o report.html --format html
+python3 donhash.py -H 5f4dcc3b5aa765d61d8327deb882cf99 -o report.html
 
 # Save as XML
-python3 donhash.py -H 5f4dcc3b5aa765d61d8327deb882cf99 -o results.xml --format xml
+python3 donhash.py -H 5f4dcc3b5aa765d61d8327deb882cf99 -o results.xml
 
 # Save as Markdown table
-python3 donhash.py -H 5f4dcc3b5aa765d61d8327deb882cf99 -o results.md --format markdown
+python3 donhash.py -H 5f4dcc3b5aa765d61d8327deb882cf99 -o results.md
 
-# Save as YAML
-python3 donhash.py -H 5f4dcc3b5aa765d61d8327deb882cf99 -o results.yaml --format yaml
+# Explicitly specify format (overrides extension)
+python3 donhash.py -H 5f4dcc3b5aa765d61d8327deb882cf99 -o output.dat --format json
 ```
 
 ### Batch Mode with Output
 
 ```bash
 # Crack hashes from a file and export as JSON
-python3 donhash.py -f hashes.txt -w rockyou.txt -o batch_results.json --format json
+python3 donhash.py -f hashes.txt -w rockyou.txt -o batch_results.json
 
-# Batch crack and generate HTML report
-python3 donhash.py -f hashes.txt -w rockyou.txt -o report.html --format html -v
+# Batch crack with threading and generate HTML report
+python3 donhash.py -f hashes.txt -w rockyou.txt -o report.html -T 10 -v
 
 # Batch crack and save as CSV for analysis
 python3 donhash.py -f hashes.txt -w rockyou.txt -o results.csv --format csv
@@ -139,9 +157,6 @@ python3 donhash.py -f hashes.txt -w rockyou.txt -o results.csv --format csv
 ```bash
 # Provide salt for salted hash types
 python3 donhash.py -H <hash> -t "md5(pass.salt)" -s mysalt
-
-# PostgreSQL-MD5 (salt = username)
-python3 donhash.py -H md5<hash> -t PostgreSQL-MD5 -s postgres
 ```
 
 ### Information & Listing
@@ -155,9 +170,6 @@ python3 donhash.py --list-types
 
 # List hash types for a specific category
 python3 donhash.py --list-types --category 3
-
-# Show wordlist statistics
-python3 donhash.py --wordlist-info rockyou.txt
 ```
 
 ## CLI Options
@@ -166,20 +178,17 @@ python3 donhash.py --wordlist-info rockyou.txt
 |--------|-------------|
 | `-H`, `--hash` | Single hash to crack |
 | `-f`, `--file` | File with hashes (one per line) |
-| `-w`, `--wordlist` | Path to wordlist (default: rockyou.txt). Supports `.gz` |
+| `-w`, `--wordlist` | Path to wordlist (default: rockyou.txt) |
 | `-t`, `--type` | Force a specific hash type |
 | `-s`, `--salt` | Salt for salted hash types |
+| `-T`, `--threads` | Number of threads for cracking (1-100, default: 5) |
+| `-o`, `--output` | Save results to file (format auto-detected or set via `--format`) |
+| `--format` | Output format: `txt`, `json`, `csv`, `html`, `xml`, `md` |
 | `-v`, `--verbose` | Show progress while cracking |
-| `-T`, `--threads` | Number of threads (default: 4, max: 32) |
-| `--no-thread` | Disable multi-threading |
-| `--timeout` | Max cracking time in seconds per hash |
-| `-o`, `--output` | Save results to file (format determined by `--format`) |
-| `--format` | Output format: `txt`, `json`, `csv`, `html`, `xml`, `markdown`, `yaml` (default: `txt`) |
 | `--detect-only` | Only detect hash type(s) |
 | `--list-categories` | List all 30 categories |
 | `--list-types` | List all hash types |
 | `--category` | Filter by category number (1-30) |
-| `--wordlist-info` | Show wordlist statistics |
 
 ## Output Format Examples
 
@@ -189,37 +198,46 @@ python3 donhash.py --wordlist-info rockyou.txt
 {
   "tool": "DonHash",
   "version": "1.1",
-  "author": "CySec Don",
-  "timestamp": "2026-04-25 10:49:05",
-  "total_hashes": 1,
-  "cracked": 1,
+  "generated": "2026-04-25T10:49:05.123456",
   "results": [
     {
       "hash": "5f4dcc3b5aa765d61d8327deb882cf99",
-      "hash_type": "MD5",
+      "type": "MD5",
+      "category": "MD Family & Variants",
+      "status": "cracked",
       "password": "password",
-      "category": "MD Family",
       "attempts": 1,
-      "time": 0.00,
-      "speed": 1486
+      "time": 0.0,
+      "speed": 1486.0
     }
-  ]
+  ],
+  "summary": {
+    "total": 1,
+    "cracked": 1,
+    "not_found": 0
+  }
 }
 ```
 
 ### CSV Output
 
 ```csv
-hash,hash_type,password,category,status,attempts,time,speed
-5f4dcc3b5aa765d61d8327deb882cf99,MD5,password,MD Family,CRACKED,1,0.00,1486
+hash,type,category,status,password,attempts,time,speed
+5f4dcc3b5aa765d61d8327deb882cf99,MD5,MD Family & Variants,cracked,password,1,0.0,1486.0
 ```
 
 ### Markdown Output
 
 ```markdown
-| # | Hash | Type | Password | Category | Status | Attempts | Time | Speed |
-|---|------|------|----------|----------|--------|----------|------|-------|
-| 1 | `5f4dcc3b5aa765d61d8327deb882cf99` | MD5 | **password** | MD Family | CRACKED | 1 | 0.00s | 1,486 h/s |
+# DonHash v1.1 - Cracking Results
+
+**Generated:** 2026-04-25 10:49:05
+
+**Summary:** 1/1 cracked (100%)
+
+| Hash | Type | Category | Status | Password | Attempts | Time | Speed |
+|------|------|----------|--------|----------|----------|------|-------|
+| `5f4dcc3b5aa765d61d8327deb882cf99` | MD5 | MD Family & Variants | cracked | password | 1 | 0.0s | 1,486 h/s |
 ```
 
 ### HTML Output
@@ -227,9 +245,31 @@ hash,hash_type,password,category,status,attempts,time,speed
 The HTML format generates a fully styled, dark-themed report with a cyberpunk aesthetic that matches the DonHash splash screen. It includes:
 - Responsive table layout
 - Color-coded cracked/not-found status
-- Monospace hash display with gold coloring
-- Summary statistics at the bottom
-- Footer with disclaimer
+- Monospace hash display
+- Summary statistics
+- Footer with tool info
+
+### XML Output
+
+```xml
+<?xml version='1.0' encoding='utf-8'?>
+<donhash-results version="1.1" generated="2026-04-25T10:49:05">
+  <summary>
+    <total>1</total>
+    <cracked>1</cracked>
+  </summary>
+  <result>
+    <hash>5f4dcc3b5aa765d61d8327deb882cf99</hash>
+    <type>MD5</type>
+    <category>MD Family &amp; Variants</category>
+    <status>cracked</status>
+    <password>password</password>
+    <attempts>1</attempts>
+    <time>0.0</time>
+    <speed>1486.0</speed>
+  </result>
+</donhash-results>
+```
 
 ## Use Cases
 
@@ -244,15 +284,15 @@ The HTML format generates a fully styled, dark-themed report with a cyberpunk ae
 ## Examples
 
 ```
-$ python3 donhash.py -H 5f4dcc3b5aa765d61d8327deb882cf99 -t MD5 -w wordlist.txt
+$ python3 donhash.py -H 5f4dcc3b5aa765d61d8327deb882cf99 -t MD5 -w wordlist.txt -T 10
 
-  ~~ DonHash Splash Screen ~~
+  ~~ DonHash v1.1 Splash Screen ~~
 
 [*] Using forced hash type: MD5
-[*] Starting DonHash crack for MD5 [MD Family & Variants]...
+[*] Starting crack for MD5 [MD Family & Variants]...
 [*] Target: 5f4dcc3b5aa765d61d8327deb882cf99
 [*] Wordlist: wordlist.txt (14,344,391 entries)
-[*] Mode: Multi-threaded (4 threads)
+[*] Threads: 10
 
 [+] HASH CRACKED!
     Password : password
@@ -261,17 +301,19 @@ $ python3 donhash.py -H 5f4dcc3b5aa765d61d8327deb882cf99 -t MD5 -w wordlist.txt
     Attempts : 1
     Time     : 0.00s
     Speed    : 1,486 hash/sec
+    Threads  : 10
 ```
 
 ```
-$ python3 donhash.py -f hashes.txt -o report.html --format html -v
+$ python3 donhash.py -f hashes.txt -o report.html -T 20 -v
 
 [*] Loaded 5 hash(es) from hashes.txt
-[*] Starting DonHash crack for SHA-256 [SHA-2 Family]...
+[*] Starting crack for SHA-256 [SHA-2 Family]...
+[*] Threads: 20
 [+] HASH CRACKED!
     Password : letmein
 ...
-[+] Results saved to: report.html (format: html)
+[+] Results written to: report.html (html format)
 ```
 
 ## Requirements
