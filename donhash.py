@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-DonHash v3.0
+DonHash v1.1
 ============
 Detects 500+ hash types and cracks them using a wordlist (default: rockyou.txt).
+Multi-format output support: txt, json, csv, html, xml, markdown, yaml.
 
 30 Categories: CRC, Non-Crypto, MD Family, SHA-1/Variants, SHA-2, SHA-3/Keccak,
 BLAKE, RIPEMD/Tiger/Whirlpool/Skein/GOST, HMAC, KDF/yescrypt, Unix Crypt,
@@ -29,7 +30,10 @@ import gzip
 import threading
 import concurrent.futures
 from typing import Optional, List, Dict, Tuple, Callable
-from datetime import timedelta
+from datetime import timedelta, datetime
+import json as json_mod
+import csv as csv_mod
+import io as io_mod
 
 
 # ──────────────────────────────────────────────
@@ -51,10 +55,213 @@ class Colors:
 # ──────────────────────────────────────────────
 #  Version & Branding
 # ──────────────────────────────────────────────
-VERSION = "3.0"
+VERSION = "1.1"
 TOOL_NAME = "DonHash"
 AUTHOR = "CySec Don"
 EMAIL = "cysecdon@gmail.com"
+
+
+# ──────────────────────────────────────────────
+#  Output Format Support
+# ──────────────────────────────────────────────
+SUPPORTED_FORMATS = ["txt", "json", "csv", "html", "xml", "markdown", "yaml"]
+
+
+def _xml_escape(text: str) -> str:
+    """Escape special characters for XML content."""
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;").replace("'", "&apos;")
+
+
+def write_output(results: List[Dict], output_file: str, fmt: str = "txt"):
+    """Write crack results to a file in the specified format.
+
+    Args:
+        results: List of dicts, each with keys: hash, hash_type, password, category, attempts, time, speed
+        output_file: Path to the output file
+        fmt: Output format - one of: txt, json, csv, html, xml, markdown, yaml
+    """
+    fmt = fmt.lower().strip(".")
+    if fmt not in SUPPORTED_FORMATS:
+        print(f"{Colors.YELLOW}[!] Unsupported format '{fmt}'. Using 'txt'. Supported: {', '.join(SUPPORTED_FORMATS)}{Colors.RESET}")
+        fmt = "txt"
+
+    # Ensure the file has the correct extension
+    base, ext = os.path.splitext(output_file)
+    if ext.lower().lstrip(".") != fmt:
+        output_file = f"{base}.{fmt}"
+
+    try:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        if fmt == "txt":
+            with open(output_file, "w", encoding="utf-8") as f:
+                f.write(f"# DonHash v{VERSION} - Cracking Results\n")
+                f.write(f"# Generated: {timestamp}\n")
+                f.write(f"# Author: {AUTHOR} ({EMAIL})\n")
+                f.write(f"# {'='*60}\n\n")
+                for r in results:
+                    status = "CRACKED" if r.get("password") else "NOT FOUND"
+                    f.write(f"Hash      : {r.get('hash', '')}\n")
+                    f.write(f"Type      : {r.get('hash_type', 'Unknown')}\n")
+                    f.write(f"Password  : {r.get('password', 'N/A')}\n")
+                    f.write(f"Category  : {r.get('category', 'N/A')}\n")
+                    f.write(f"Status    : {status}\n")
+                    if r.get("attempts"):
+                        f.write(f"Attempts  : {r['attempts']:,}\n")
+                    if r.get("time"):
+                        f.write(f"Time      : {r['time']:.2f}s\n")
+                    if r.get("speed"):
+                        f.write(f"Speed     : {r['speed']:,.0f} h/s\n")
+                    f.write(f"{'-'*40}\n")
+
+        elif fmt == "json":
+            data = {
+                "tool": "DonHash",
+                "version": VERSION,
+                "author": AUTHOR,
+                "timestamp": timestamp,
+                "total_hashes": len(results),
+                "cracked": sum(1 for r in results if r.get("password")),
+                "results": results,
+            }
+            with open(output_file, "w", encoding="utf-8") as f:
+                json_mod.dump(data, f, indent=2, ensure_ascii=False)
+
+        elif fmt == "csv":
+            with open(output_file, "w", encoding="utf-8", newline="") as f:
+                writer = csv_mod.DictWriter(f, fieldnames=["hash", "hash_type", "password", "category", "status", "attempts", "time", "speed"])
+                writer.writeheader()
+                for r in results:
+                    row = dict(r)
+                    row["status"] = "CRACKED" if r.get("password") else "NOT FOUND"
+                    row["password"] = r.get("password", "")
+                    row["attempts"] = r.get("attempts", "")
+                    row["time"] = f"{r['time']:.2f}" if r.get("time") else ""
+                    row["speed"] = f"{r['speed']:,.0f}" if r.get("speed") else ""
+                    writer.writerow({k: row.get(k, "") for k in writer.fieldnames})
+
+        elif fmt == "html":
+            with open(output_file, "w", encoding="utf-8") as f:
+                f.write(f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DonHash v{VERSION} - Cracking Results</title>
+<style>
+  body {{ font-family: 'Segoe UI', Arial, sans-serif; background: #0a0a0a; color: #e0e0e0; margin: 0; padding: 20px; }}
+  h1 {{ color: #00e5ff; text-align: center; border-bottom: 2px solid #00e5ff; padding-bottom: 10px; }}
+  .meta {{ text-align: center; color: #888; margin-bottom: 20px; }}
+  table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
+  th {{ background: #1a1a2e; color: #00e5ff; padding: 12px 15px; text-align: left; border-bottom: 2px solid #00e5ff; }}
+  td {{ padding: 10px 15px; border-bottom: 1px solid #333; }}
+  tr:hover {{ background: #1a1a2e; }}
+  .cracked {{ color: #00ff41; font-weight: bold; }}
+  .notfound {{ color: #ff4444; }}
+  .password {{ color: #00ff41; font-family: 'Courier New', monospace; font-weight: bold; font-size: 1.1em; }}
+  .hash-val {{ font-family: 'Courier New', monospace; color: #ffd700; word-break: break-all; }}
+  footer {{ text-align: center; margin-top: 30px; color: #666; border-top: 1px solid #333; padding-top: 15px; }}
+</style>
+</head>
+<body>
+<h1>&#x1F6E1; DonHash v{_xml_escape(VERSION)} - Cracking Results</h1>
+<div class="meta">Generated: {_xml_escape(timestamp)} | Author: {_xml_escape(AUTHOR)} ({_xml_escape(EMAIL)})</div>
+<table>
+<tr><th>#</th><th>Hash</th><th>Type</th><th>Password</th><th>Category</th><th>Status</th><th>Attempts</th><th>Time</th><th>Speed</th></tr>
+""")
+                for i, r in enumerate(results, 1):
+                    status = "CRACKED" if r.get("password") else "NOT FOUND"
+                    status_cls = "cracked" if r.get("password") else "notfound"
+                    pw = _xml_escape(r.get("password", "")) if r.get("password") else "-"
+                    f.write(f'<tr><td>{i}</td><td class="hash-val">{_xml_escape(r.get("hash", ""))}</td>'
+                            f'<td>{_xml_escape(r.get("hash_type", "Unknown"))}</td>'
+                            f'<td class="password">{pw}</td>'
+                            f'<td>{_xml_escape(r.get("category", "N/A"))}</td>'
+                            f'<td class="{status_cls}">{status}</td>'
+                            f'<td>{r.get("attempts", "-"):,}</td>' if r.get("attempts") else f'<td>-</td>'
+                            )
+                    f.write(f'<td>{r.get("time", 0):.2f}s</td>' if r.get("time") else '<td>-</td>')
+                    f.write(f'<td>{r.get("speed", 0):,.0f} h/s</td>' if r.get("speed") else '<td>-</td>')
+                    f.write('</tr>\n')
+                cracked = sum(1 for r in results if r.get("password"))
+                f.write(f"""</table>
+<div class="meta" style="margin-top:20px;font-size:1.2em;">
+  Cracked: <span class="cracked">{cracked}</span> / {len(results)} ({cracked/len(results)*100:.0f}%)
+</div>
+<footer>DonHash v{_xml_escape(VERSION)} by {_xml_escape(AUTHOR)} &mdash; {_xml_escape(EMAIL)}<br>
+For educational and authorized security testing only.</footer>
+</body></html>""")
+
+        elif fmt == "xml":
+            with open(output_file, "w", encoding="utf-8") as f:
+                f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
+                f.write(f'<donhash version="{_xml_escape(VERSION)}" author="{_xml_escape(AUTHOR)}" timestamp="{_xml_escape(timestamp)}">\n')
+                f.write(f'  <summary total="{len(results)}" cracked="{sum(1 for r in results if r.get("password"))}"/>\n')
+                f.write("  <results>\n")
+                for r in results:
+                    status = "cracked" if r.get("password") else "not_found"
+                    f.write(f'    <result status="{status}">\n')
+                    f.write(f'      <hash>{_xml_escape(r.get("hash", ""))}</hash>\n')
+                    f.write(f'      <type>{_xml_escape(r.get("hash_type", "Unknown"))}</type>\n')
+                    f.write(f'      <password>{_xml_escape(r.get("password", ""))}</password>\n')
+                    f.write(f'      <category>{_xml_escape(r.get("category", "N/A"))}</category>\n')
+                    if r.get("attempts"):
+                        f.write(f'      <attempts>{r["attempts"]}</attempts>\n')
+                    if r.get("time"):
+                        f.write(f'      <time>{r["time"]:.2f}</time>\n')
+                    if r.get("speed"):
+                        f.write(f'      <speed>{r["speed"]:,.0f}</speed>\n')
+                    f.write(f'    </result>\n')
+                f.write("  </results>\n")
+                f.write("</donhash>\n")
+
+        elif fmt == "markdown":
+            with open(output_file, "w", encoding="utf-8") as f:
+                f.write(f"# DonHash v{VERSION} - Cracking Results\n\n")
+                f.write(f"**Generated:** {timestamp} | **Author:** {AUTHOR} ({EMAIL})\n\n")
+                cracked = sum(1 for r in results if r.get("password"))
+                f.write(f"**Summary:** {cracked}/{len(results)} cracked ({cracked/len(results)*100:.0f}%)\n\n")
+                f.write("| # | Hash | Type | Password | Category | Status | Attempts | Time | Speed |\n")
+                f.write("|---|------|------|----------|----------|--------|----------|------|-------|\n")
+                for i, r in enumerate(results, 1):
+                    status = "CRACKED" if r.get("password") else "NOT FOUND"
+                    pw = r.get("password", "-") or "-"
+                    att = f"{r['attempts']:,}" if r.get("attempts") else "-"
+                    tm = f"{r['time']:.2f}s" if r.get("time") else "-"
+                    sp = f"{r['speed']:,.0f} h/s" if r.get("speed") else "-"
+                    f.write(f"| {i} | `{r.get('hash', '')}` | {r.get('hash_type', 'Unknown')} | **{pw}** | {r.get('category', 'N/A')} | {status} | {att} | {tm} | {sp} |\n")
+
+        elif fmt == "yaml":
+            with open(output_file, "w", encoding="utf-8") as f:
+                f.write(f"# DonHash v{VERSION} - Cracking Results\n")
+                f.write(f"# Generated: {timestamp}\n\n")
+                f.write(f"tool: DonHash\n")
+                f.write(f"version: \"{VERSION}\"\n")
+                f.write(f"author: \"{AUTHOR}\"\n")
+                f.write(f"timestamp: \"{timestamp}\"\n")
+                f.write(f"total_hashes: {len(results)}\n")
+                f.write(f"cracked: {sum(1 for r in results if r.get('password'))}\n")
+                f.write(f"results:\n")
+                for r in results:
+                    status = "cracked" if r.get("password") else "not_found"
+                    f.write(f'  - hash: "{r.get("hash", "")}"\n')
+                    f.write(f'    type: "{r.get("hash_type", "Unknown")}"\n')
+                    f.write(f'    password: "{r.get("password", "")}"\n')
+                    f.write(f'    category: "{r.get("category", "N/A")}"\n')
+                    f.write(f'    status: "{status}"\n')
+                    if r.get("attempts"):
+                        f.write(f'    attempts: {r["attempts"]}\n')
+                    if r.get("time"):
+                        f.write(f'    time: {r["time"]:.2f}\n')
+                    if r.get("speed"):
+                        f.write(f'    speed: {r["speed"]:,.0f}\n')
+
+        print(f"{Colors.GREEN}[+] Results saved to: {output_file} (format: {fmt}){Colors.RESET}")
+        return True
+
+    except Exception as e:
+        print(f"{Colors.RED}[!] Error writing output file: {e}{Colors.RESET}")
+        return False
 
 
 # ──────────────────────────────────────────────
@@ -104,6 +311,7 @@ def print_banner():
         f" {C}{BD}[+]{RS} {W}{BD}500+ HASH TYPES SUPPORTED{RS}     {DM}fingerprint{RS}",
         f" {C}{BD}[+]{RS} {W}{BD}30 DETECTION CATEGORIES{RS}       {DM}target{RS}",
         f" {C}{BD}[+]{RS} {W}{BD}MULTI-THREADED CRACKING{RS}      {DM}zap{RS}",
+        f" {C}{BD}[+]{RS} {W}{BD}MULTI-FORMAT OUTPUT{RS}         {DM}report{RS}",
     ]
     for i in range(max(len(logo), len(right))):
         l = _pad(logo[i], COL) if i < len(logo) else ' ' * COL
@@ -1658,6 +1866,7 @@ def crack_single_hash(
     verbose: bool = False, ext_salt: str = "",
     num_threads: int = 4, no_thread: bool = False,
     timeout: Optional[float] = None, output_file: Optional[str] = None,
+    output_format: str = "txt",
 ) -> Optional[str]:
     """Attempt to crack a single hash using the provided wordlist."""
 
@@ -1819,17 +2028,35 @@ def crack_single_hash(
 
         # Save to output file if specified
         if output_file:
-            try:
-                with open(output_file, 'a', encoding='utf-8') as f:
-                    f.write(f"{target_hash}:{hash_type}:{found_word}\n")
-                print(f"{Colors.GREEN}    Saved to : {output_file}{Colors.RESET}")
-            except Exception as e:
-                print(f"{Colors.YELLOW}[!] Could not write to output file: {e}{Colors.RESET}")
+            result_data = [{
+                "hash": target_hash,
+                "hash_type": hash_type,
+                "password": found_word,
+                "category": cat_name,
+                "attempts": final_attempts,
+                "time": elapsed,
+                "speed": rate,
+            }]
+            write_output(result_data, output_file, output_format)
 
         return found_word
     else:
         print(f"\n{Colors.RED}[-] Password not found in wordlist.{Colors.RESET}")
         print(f"{Colors.RED}    Attempts: {final_attempts:,} | Time: {elapsed:.2f}s | Speed: {rate:,.0f} h/s{Colors.RESET}")
+
+        # Save not-found result to output file if specified
+        if output_file:
+            result_data = [{
+                "hash": target_hash,
+                "hash_type": hash_type,
+                "password": None,
+                "category": cat_name,
+                "attempts": final_attempts,
+                "time": elapsed,
+                "speed": rate,
+            }]
+            write_output(result_data, output_file, output_format)
+
         return None
 
 
@@ -1840,6 +2067,7 @@ def crack_from_file(
     file_path: str, wordlist_path: str, hash_type_override: Optional[str],
     verbose: bool, num_threads: int = 4, no_thread: bool = False,
     timeout: Optional[float] = None, output_file: Optional[str] = None,
+    output_format: str = "txt",
 ):
     if not os.path.isfile(file_path):
         print(f"{Colors.RED}[!] Hash file not found: {file_path}{Colors.RESET}")
@@ -1881,7 +2109,8 @@ def crack_from_file(
         pw = crack_single_hash(
             target_hash, hash_type, wordlist_path, verbose,
             num_threads=num_threads, no_thread=no_thread,
-            timeout=timeout, output_file=output_file,
+            timeout=timeout, output_file=None,  # Defer writing; batch writes all at once
+            output_format=output_format,
         )
         results.append((target_hash, hash_type, pw))
         print()
@@ -1896,6 +2125,20 @@ def crack_from_file(
         print(f"  {ht or 'Unknown':<25} | {th[:40]:<42} | {st}")
     if total:
         print(f"\n  Cracked: {Colors.GREEN}{cracked}{Colors.RESET}/{total} ({cracked/total*100:.0f}%)")
+
+    # Write batch results to output file
+    if output_file:
+        result_data = []
+        for th, ht, pw in results:
+            cat = HASH_DB.get(ht or "", {}).get("cat", 0)
+            cat_name = CATEGORY_NAMES.get(cat, "N/A")
+            result_data.append({
+                "hash": th,
+                "hash_type": ht or "Unknown",
+                "password": pw,
+                "category": cat_name,
+            })
+        write_output(result_data, output_file, output_format)
 
 
 # ──────────────────────────────────────────────
@@ -1944,6 +2187,15 @@ def main():
         epilog=f"""
 DonHash v{VERSION} by {AUTHOR} ({EMAIL})
 
+Output Formats (use with -o):
+  txt       Plain text with headers (default)
+  json      Structured JSON with metadata
+  csv       Comma-separated values (spreadsheet-friendly)
+  html      Styled HTML report (dark theme, cyberpunk look)
+  xml       XML document with structured results
+  markdown  GitHub-flavored Markdown table
+  yaml      YAML serialization
+
 Examples:
   %(prog)s -H 5f4dcc3b5aa765d61d8327deb882cf99
   %(prog)s -H 5f4dcc3b5aa765d61d8327deb882cf99 -t md5
@@ -1951,10 +2203,21 @@ Examples:
   %(prog)s -H 5f4dcc3b5aa765d61d8327deb882cf99 -T 8 -v
   %(prog)s -H md5... -t PostgreSQL-MD5 -s postgres_username
   %(prog)s -f hashes.txt -w rockyou.txt -v -T 16
+  %(prog)s -H 5f4dcc3b5aa765d61d8327deb882cf99 -o results.json --format json
+  %(prog)s -H 5f4dcc3b5aa765d61d8327deb882cf99 -o report.html --format html
+  %(prog)s -f hashes.txt -o batch_results.csv --format csv
+  %(prog)s -f hashes.txt -o report.md --format markdown
   %(prog)s --list-categories
   %(prog)s --list-types
   %(prog)s --list-types --category 3
   %(prog)s --wordlist-info rockyou.txt
+
+Disclaimer:
+  This tool is intended for authorized security testing and educational
+  purposes ONLY. Unauthorized use of this tool to crack passwords or
+  hashes without explicit permission is ILLEGAL and UNETHICAL. The
+  author assumes no liability for misuse. Always obtain proper
+  authorization before testing any system.
         """,
     )
 
@@ -1973,7 +2236,10 @@ Examples:
     parser.add_argument("--timeout", type=float, default=None, metavar="SECS",
                         help="Max cracking time in seconds per hash")
     parser.add_argument("-o", "--output", default=None, metavar="FILE",
-                        help="Save cracked results to file (format: hash:type:password)")
+                        help="Save results to file (format determined by --format, default: txt)")
+    parser.add_argument("--format", dest="output_format", default="txt",
+                        choices=SUPPORTED_FORMATS,
+                        help=f"Output format: {', '.join(SUPPORTED_FORMATS)} (default: txt)")
     parser.add_argument("--detect-only", action="store_true", help="Only detect hash type(s)")
     parser.add_argument("--list-categories", action="store_true", help="List all 30 categories")
     parser.add_argument("--list-types", action="store_true", help="List all hash types")
@@ -2061,6 +2327,7 @@ Examples:
             no_thread=args.no_thread,
             timeout=args.timeout,
             output_file=args.output,
+            output_format=args.output_format,
         )
 
     # ── File mode ──
@@ -2076,6 +2343,7 @@ Examples:
             no_thread=args.no_thread,
             timeout=args.timeout,
             output_file=args.output,
+            output_format=args.output_format,
         )
 
 
