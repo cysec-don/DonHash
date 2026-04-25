@@ -60,50 +60,31 @@ def print_banner():
     W  = Colors.WHITE;  BD = Colors.BOLD;    DM = Colors.DIM
     RS = Colors.RESET
 
-    import re as _re
-    def _vis_len(s): return len(_re.sub(r'\033\[[0-9;]*m', '', s))
-    def _pad(s, w): return s + ' ' * max(0, w - _vis_len(s))
-
-    COL = 26
     print()
-    print(f"  {C}{BD}{'~' * 72}{RS}")
+    print(f"  {C}{BD}{'=' * 60}{RS}")
     print()
-
-    logo = [
-        f"  {C}{BD}             /\\{RS}",
-        f"  {C}{BD}            /  \\{RS}",
-        f"  {C}{BD}           /    \\{RS}",
-        f"  {C}{BD}          / {Y}{BD}.--.{C} \\{RS}",
-        f"  {C}{BD}         /  {Y}{BD}|  |{C}  \\{RS}",
-        f"  {C}{BD}        /   {Y}{BD}|  |{C}   \\{RS}",
-        f"  {C}{BD}       / {R}{BD}._{Y}{BD}|__|{R}{BD}_.{C} \\{RS}",
-        f"  {C}{BD}      /  {R}{BD}/ {Y}{BD}||{R}{BD} \\  {C} \\{RS}",
-        f"  {C}{BD}     /  {R}{BD}/  {Y}{BD}||{R}{BD}  \\  {C} \\{RS}",
-        f"  {C}{BD}    / {R}{BD}/   {Y}{BD}||{R}{BD}   \\  {C} \\{RS}",
-        f"  {C}{BD}   / {R}{BD}/    {Y}{BD}||{R}{BD}    \\  {C} \\{RS}",
-        f"  {C}{BD}  / {R}{BD}/_____{Y}{BD}||{R}{BD}_____\\  {C} \\{RS}",
-        f"  {C}{BD} /___________________\\{RS}",
-        f"  {Y}{BD} \\{R}{BD}==================={Y}{BD}/{RS}",
-        f"  {R}{BD}  \\_________________/{RS}",
-    ]
-    right = [
-        f"  {C}{BD}\u2588\u2588\u2588\u2588\u2588\u2588\u2557  {C}{BD}\u2588\u2588\u2588\u2588\u2588\u2588\u2557{C}{BD}\u2588\u2588\u2557  {C}{BD}\u2588\u2588\u2557{C}{BD}\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2557{C}{BD}\u2588\u2588\u2557  {C}{BD}\u2588\u2588\u2557 {C}{BD}\u2588\u2588\u2588\u2588\u2588\u2557 {C}{BD}\u2588\u2588\u2588\u2588\u2557   {C}{BD}\u2588\u2588\u2557{RS}",
-        f"  {C}{BD}\u2588\u2551\u2550\u2550\u2550\u2550\u2550\u2550\u255D {C}{BD}\u2588\u2551\u2550\u2550\u2550\u2550\u2557{C}{BD}\u2588\u2551 {C}{BD}\u2588\u2551\u255D{C}{BD}\u2588\u2551\u2550\u2550\u2550\u2550\u2550\u2550\u255D{C}{BD}\u2588\u2551  {C}{BD}\u2588\u2551{C}{BD}\u2588\u2551\u2550\u2550\u2550\u2550\u2550\u2551{C}{BD}\u2588\u2551\u2550\u2550\u2550\u2550\u2551  {C}{BD}\u2588\u2551{RS}",
-        f"  {C}{BD}\u2588\u2551  {C}{BD}\u2588\u2588\u2588\u2557{C}{BD}\u2588\u2551     {C}{BD}\u2588\u2588\u2588\u2588\u2588\u2588\u2557\u255D {C}{BD}\u2588\u2588\u2588\u2588\u2588\u2588\u2557{C}{BD}\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2551{C}{BD}\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2551{C}{BD}\u2588\u2551\u2550\u2588\u2588\u2557 {C}{BD}\u2588\u2551{RS}",
-        f"  {C}{BD}\u2588\u2551   {C}{BD}\u2588\u2551{C}{BD}\u2588\u2551     {C}{BD}\u2588\u2551\u2550\u2550\u2588\u2551\u255D {C}{BD}\u2588\u2551\u2550\u2550\u2550\u2550\u255D{C}{BD}\u2588\u2551\u2550\u2550\u2550\u2550\u2588\u2551{C}{BD}\u2588\u2551\u2550\u2550\u2550\u2550\u2550\u2551{C}{BD}\u2588\u2551\u255D {C}{BD}\u2588\u2588\u2557{C}{BD}\u2588\u2551{RS}",
-        f"  {C}{BD}\u255A\u2588\u2588\u2588\u2588\u2588\u2551\u255D{C}{BD}\u255A\u2588\u2588\u2588\u2588\u2588\u2557{C}{BD}\u2588\u2551  {C}{BD}\u2588\u2551\u255D{C}{BD}\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2557{C}{BD}\u2588\u2551  {C}{BD}\u2588\u2551{C}{BD}\u2588\u2551  {C}{BD}\u2588\u2551{C}{BD}\u2588\u2551 {C}{BD}\u255A\u2588\u2588\u2588\u2551{RS}",
-        f"  {C}{BD} \u255A\u2550\u2550\u2550\u2550\u2550\u255D  {C}{BD}\u255A\u2550\u2550\u2550\u2550\u2550\u255D{C}{BD}\u255A\u2550\u255D  {C}{BD}\u255A\u2550\u255D{C}{BD}\u255A\u2550\u2550\u2550\u2550\u2550\u2550\u255D{C}{BD}\u255A\u2550\u255D  {C}{BD}\u255A\u2550\u255D{C}{BD}\u255A\u2550\u255D  {C}{BD}\u255A\u2550\u255D{C}{BD}\u255A\u2550\u255D  {C}{BD}\u255A\u2550\u2550\u2550\u255D{RS}",
-        f"  ",
-        f"  {DM}       HASH DETECTOR & CRACKER{RS}",
-        f"  ",
-        f"  {C}{BD}[+]{RS} {W}{BD}500+ HASH TYPES SUPPORTED{RS}     {DM}fingerprint{RS}",
-        f"  {C}{BD}[+]{RS} {W}{BD}30 DETECTION CATEGORIES{RS}       {DM}target{RS}",
-        f"  {C}{BD}[+]{RS} {W}{BD}MULTI-THREADED CRACKING{RS}      {DM}hexagon{RS}",
-    ]
-    for i in range(max(len(logo), len(right))):
-        l = _pad(logo[i], COL) if i < len(logo) else ' ' * COL
-        r = right[i] if i < len(right) else ""
-        print(f"{l}  {r}")
+    print(f"          {C}{BD}             /\\{RS}")
+    print(f"          {C}{BD}            /  \\{RS}")
+    print(f"          {C}{BD}           /    \\{RS}")
+    print(f"          {C}{BD}          / {Y}{BD}.--.{C} \\{RS}")
+    print(f"          {C}{BD}         /  {Y}{BD}|  |{C}  \\{RS}")
+    print(f"          {C}{BD}        /   {Y}{BD}|  |{C}   \\{RS}")
+    print(f"          {C}{BD}       / {R}{BD}._{Y}{BD}|__|{R}{BD}_.{C} \\{RS}")
+    print(f"          {C}{BD}      /  {R}{BD}/ {Y}{BD}||{R}{BD} \\  {C} \\{RS}")
+    print(f"          {C}{BD}     /  {R}{BD}/  {Y}{BD}||{R}{BD}  \\  {C} \\{RS}")
+    print(f"          {C}{BD}    / {R}{BD}/   {Y}{BD}||{R}{BD}   \\  {C} \\{RS}")
+    print(f"          {C}{BD}   / {R}{BD}/    {Y}{BD}||{R}{BD}    \\  {C} \\{RS}")
+    print(f"          {C}{BD}  / {R}{BD}/_____{Y}{BD}||{R}{BD}_____\\  {C} \\{RS}")
+    print(f"          {C}{BD} /___________________\\{RS}")
+    print(f"          {Y}{BD} \\{R}{BD}==================={Y}{BD}/{RS}")
+    print(f"          {R}{BD}  \\_________________/{RS}")
+    print()
+    print(f"  {C}{BD}+----------------------------------------------------------+{RS}")
+    print(f"  {C}{BD}|{RS}                                                          {C}{BD}|{RS}")
+    print(f"  {C}{BD}|{RS}   {R}{BD}>>>{RS}  {W}{BD}D  O  N  H  A  S  H{RS}  {R}{BD}<<<{RS}                        {C}{BD}|{RS}")
+    print(f"  {C}{BD}|{RS}        {DM}Hash Detector & Cracker{RS}                             {C}{BD}|{RS}")
+    print(f"  {C}{BD}|{RS}                                                          {C}{BD}|{RS}")
+    print(f"  {C}{BD}+----------------------------------------------------------+{RS}")
     print()
 
     print(f"  {C}{BD}+------------------------------------------------------------+{RS}")
