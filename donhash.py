@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-DonHash v1.1
-============
+DonHash v1.1 - Hash Detector & Cracker
+======================================
 Detects 500+ hash types and cracks them using a wordlist (default: rockyou.txt).
-Multi-format output support: txt, json, csv, html, xml, markdown, yaml.
+Supports custom wordlists, multi-threaded cracking, and 30 hash categories.
 
 30 Categories: CRC, Non-Crypto, MD Family, SHA-1/Variants, SHA-2, SHA-3/Keccak,
 BLAKE, RIPEMD/Tiger/Whirlpool/Skein/GOST, HMAC, KDF/yescrypt, Unix Crypt,
@@ -16,7 +16,9 @@ Author: CySec Don (cysecdon@gmail.com)
 """
 
 import argparse
+import csv
 import hashlib
+import json
 import os
 import sys
 import time
@@ -26,14 +28,11 @@ import base64
 import struct
 import hmac as hmac_mod
 import math
-import gzip
 import threading
-import concurrent.futures
+import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
 from typing import Optional, List, Dict, Tuple, Callable
-from datetime import timedelta, datetime
-import json as json_mod
-import csv as csv_mod
-import io as io_mod
 
 
 # ──────────────────────────────────────────────
@@ -53,218 +52,6 @@ class Colors:
 
 
 # ──────────────────────────────────────────────
-#  Version & Branding
-# ──────────────────────────────────────────────
-VERSION = "1.1"
-TOOL_NAME = "DonHash"
-AUTHOR = "CySec Don"
-EMAIL = "cysecdon@gmail.com"
-
-
-# ──────────────────────────────────────────────
-#  Output Format Support
-# ──────────────────────────────────────────────
-SUPPORTED_FORMATS = ["txt", "json", "csv", "html", "xml", "markdown", "yaml"]
-
-
-def _xml_escape(text: str) -> str:
-    """Escape special characters for XML content."""
-    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;").replace("'", "&apos;")
-
-
-def write_output(results: List[Dict], output_file: str, fmt: str = "txt"):
-    """Write crack results to a file in the specified format.
-
-    Args:
-        results: List of dicts, each with keys: hash, hash_type, password, category, attempts, time, speed
-        output_file: Path to the output file
-        fmt: Output format - one of: txt, json, csv, html, xml, markdown, yaml
-    """
-    fmt = fmt.lower().strip(".")
-    if fmt not in SUPPORTED_FORMATS:
-        print(f"{Colors.YELLOW}[!] Unsupported format '{fmt}'. Using 'txt'. Supported: {', '.join(SUPPORTED_FORMATS)}{Colors.RESET}")
-        fmt = "txt"
-
-    # Ensure the file has the correct extension
-    base, ext = os.path.splitext(output_file)
-    if ext.lower().lstrip(".") != fmt:
-        output_file = f"{base}.{fmt}"
-
-    try:
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        if fmt == "txt":
-            with open(output_file, "w", encoding="utf-8") as f:
-                f.write(f"# DonHash v{VERSION} - Cracking Results\n")
-                f.write(f"# Generated: {timestamp}\n")
-                f.write(f"# Author: {AUTHOR} ({EMAIL})\n")
-                f.write(f"# {'='*60}\n\n")
-                for r in results:
-                    status = "CRACKED" if r.get("password") else "NOT FOUND"
-                    f.write(f"Hash      : {r.get('hash', '')}\n")
-                    f.write(f"Type      : {r.get('hash_type', 'Unknown')}\n")
-                    f.write(f"Password  : {r.get('password', 'N/A')}\n")
-                    f.write(f"Category  : {r.get('category', 'N/A')}\n")
-                    f.write(f"Status    : {status}\n")
-                    if r.get("attempts"):
-                        f.write(f"Attempts  : {r['attempts']:,}\n")
-                    if r.get("time"):
-                        f.write(f"Time      : {r['time']:.2f}s\n")
-                    if r.get("speed"):
-                        f.write(f"Speed     : {r['speed']:,.0f} h/s\n")
-                    f.write(f"{'-'*40}\n")
-
-        elif fmt == "json":
-            data = {
-                "tool": "DonHash",
-                "version": VERSION,
-                "author": AUTHOR,
-                "timestamp": timestamp,
-                "total_hashes": len(results),
-                "cracked": sum(1 for r in results if r.get("password")),
-                "results": results,
-            }
-            with open(output_file, "w", encoding="utf-8") as f:
-                json_mod.dump(data, f, indent=2, ensure_ascii=False)
-
-        elif fmt == "csv":
-            with open(output_file, "w", encoding="utf-8", newline="") as f:
-                writer = csv_mod.DictWriter(f, fieldnames=["hash", "hash_type", "password", "category", "status", "attempts", "time", "speed"])
-                writer.writeheader()
-                for r in results:
-                    row = dict(r)
-                    row["status"] = "CRACKED" if r.get("password") else "NOT FOUND"
-                    row["password"] = r.get("password", "")
-                    row["attempts"] = r.get("attempts", "")
-                    row["time"] = f"{r['time']:.2f}" if r.get("time") else ""
-                    row["speed"] = f"{r['speed']:,.0f}" if r.get("speed") else ""
-                    writer.writerow({k: row.get(k, "") for k in writer.fieldnames})
-
-        elif fmt == "html":
-            with open(output_file, "w", encoding="utf-8") as f:
-                f.write(f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>DonHash v{VERSION} - Cracking Results</title>
-<style>
-  body {{ font-family: 'Segoe UI', Arial, sans-serif; background: #0a0a0a; color: #e0e0e0; margin: 0; padding: 20px; }}
-  h1 {{ color: #00e5ff; text-align: center; border-bottom: 2px solid #00e5ff; padding-bottom: 10px; }}
-  .meta {{ text-align: center; color: #888; margin-bottom: 20px; }}
-  table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
-  th {{ background: #1a1a2e; color: #00e5ff; padding: 12px 15px; text-align: left; border-bottom: 2px solid #00e5ff; }}
-  td {{ padding: 10px 15px; border-bottom: 1px solid #333; }}
-  tr:hover {{ background: #1a1a2e; }}
-  .cracked {{ color: #00ff41; font-weight: bold; }}
-  .notfound {{ color: #ff4444; }}
-  .password {{ color: #00ff41; font-family: 'Courier New', monospace; font-weight: bold; font-size: 1.1em; }}
-  .hash-val {{ font-family: 'Courier New', monospace; color: #ffd700; word-break: break-all; }}
-  footer {{ text-align: center; margin-top: 30px; color: #666; border-top: 1px solid #333; padding-top: 15px; }}
-</style>
-</head>
-<body>
-<h1>&#x1F6E1; DonHash v{_xml_escape(VERSION)} - Cracking Results</h1>
-<div class="meta">Generated: {_xml_escape(timestamp)} | Author: {_xml_escape(AUTHOR)} ({_xml_escape(EMAIL)})</div>
-<table>
-<tr><th>#</th><th>Hash</th><th>Type</th><th>Password</th><th>Category</th><th>Status</th><th>Attempts</th><th>Time</th><th>Speed</th></tr>
-""")
-                for i, r in enumerate(results, 1):
-                    status = "CRACKED" if r.get("password") else "NOT FOUND"
-                    status_cls = "cracked" if r.get("password") else "notfound"
-                    pw = _xml_escape(r.get("password", "")) if r.get("password") else "-"
-                    f.write(f'<tr><td>{i}</td><td class="hash-val">{_xml_escape(r.get("hash", ""))}</td>'
-                            f'<td>{_xml_escape(r.get("hash_type", "Unknown"))}</td>'
-                            f'<td class="password">{pw}</td>'
-                            f'<td>{_xml_escape(r.get("category", "N/A"))}</td>'
-                            f'<td class="{status_cls}">{status}</td>'
-                            f'<td>{r.get("attempts", "-"):,}</td>' if r.get("attempts") else f'<td>-</td>'
-                            )
-                    f.write(f'<td>{r.get("time", 0):.2f}s</td>' if r.get("time") else '<td>-</td>')
-                    f.write(f'<td>{r.get("speed", 0):,.0f} h/s</td>' if r.get("speed") else '<td>-</td>')
-                    f.write('</tr>\n')
-                cracked = sum(1 for r in results if r.get("password"))
-                f.write(f"""</table>
-<div class="meta" style="margin-top:20px;font-size:1.2em;">
-  Cracked: <span class="cracked">{cracked}</span> / {len(results)} ({cracked/len(results)*100:.0f}%)
-</div>
-<footer>DonHash v{_xml_escape(VERSION)} by {_xml_escape(AUTHOR)} &mdash; {_xml_escape(EMAIL)}<br>
-For educational and authorized security testing only.</footer>
-</body></html>""")
-
-        elif fmt == "xml":
-            with open(output_file, "w", encoding="utf-8") as f:
-                f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
-                f.write(f'<donhash version="{_xml_escape(VERSION)}" author="{_xml_escape(AUTHOR)}" timestamp="{_xml_escape(timestamp)}">\n')
-                f.write(f'  <summary total="{len(results)}" cracked="{sum(1 for r in results if r.get("password"))}"/>\n')
-                f.write("  <results>\n")
-                for r in results:
-                    status = "cracked" if r.get("password") else "not_found"
-                    f.write(f'    <result status="{status}">\n')
-                    f.write(f'      <hash>{_xml_escape(r.get("hash", ""))}</hash>\n')
-                    f.write(f'      <type>{_xml_escape(r.get("hash_type", "Unknown"))}</type>\n')
-                    f.write(f'      <password>{_xml_escape(r.get("password", ""))}</password>\n')
-                    f.write(f'      <category>{_xml_escape(r.get("category", "N/A"))}</category>\n')
-                    if r.get("attempts"):
-                        f.write(f'      <attempts>{r["attempts"]}</attempts>\n')
-                    if r.get("time"):
-                        f.write(f'      <time>{r["time"]:.2f}</time>\n')
-                    if r.get("speed"):
-                        f.write(f'      <speed>{r["speed"]:,.0f}</speed>\n')
-                    f.write(f'    </result>\n')
-                f.write("  </results>\n")
-                f.write("</donhash>\n")
-
-        elif fmt == "markdown":
-            with open(output_file, "w", encoding="utf-8") as f:
-                f.write(f"# DonHash v{VERSION} - Cracking Results\n\n")
-                f.write(f"**Generated:** {timestamp} | **Author:** {AUTHOR} ({EMAIL})\n\n")
-                cracked = sum(1 for r in results if r.get("password"))
-                f.write(f"**Summary:** {cracked}/{len(results)} cracked ({cracked/len(results)*100:.0f}%)\n\n")
-                f.write("| # | Hash | Type | Password | Category | Status | Attempts | Time | Speed |\n")
-                f.write("|---|------|------|----------|----------|--------|----------|------|-------|\n")
-                for i, r in enumerate(results, 1):
-                    status = "CRACKED" if r.get("password") else "NOT FOUND"
-                    pw = r.get("password", "-") or "-"
-                    att = f"{r['attempts']:,}" if r.get("attempts") else "-"
-                    tm = f"{r['time']:.2f}s" if r.get("time") else "-"
-                    sp = f"{r['speed']:,.0f} h/s" if r.get("speed") else "-"
-                    f.write(f"| {i} | `{r.get('hash', '')}` | {r.get('hash_type', 'Unknown')} | **{pw}** | {r.get('category', 'N/A')} | {status} | {att} | {tm} | {sp} |\n")
-
-        elif fmt == "yaml":
-            with open(output_file, "w", encoding="utf-8") as f:
-                f.write(f"# DonHash v{VERSION} - Cracking Results\n")
-                f.write(f"# Generated: {timestamp}\n\n")
-                f.write(f"tool: DonHash\n")
-                f.write(f"version: \"{VERSION}\"\n")
-                f.write(f"author: \"{AUTHOR}\"\n")
-                f.write(f"timestamp: \"{timestamp}\"\n")
-                f.write(f"total_hashes: {len(results)}\n")
-                f.write(f"cracked: {sum(1 for r in results if r.get('password'))}\n")
-                f.write(f"results:\n")
-                for r in results:
-                    status = "cracked" if r.get("password") else "not_found"
-                    f.write(f'  - hash: "{r.get("hash", "")}"\n')
-                    f.write(f'    type: "{r.get("hash_type", "Unknown")}"\n')
-                    f.write(f'    password: "{r.get("password", "")}"\n')
-                    f.write(f'    category: "{r.get("category", "N/A")}"\n')
-                    f.write(f'    status: "{status}"\n')
-                    if r.get("attempts"):
-                        f.write(f'    attempts: {r["attempts"]}\n')
-                    if r.get("time"):
-                        f.write(f'    time: {r["time"]:.2f}\n')
-                    if r.get("speed"):
-                        f.write(f'    speed: {r["speed"]:,.0f}\n')
-
-        print(f"{Colors.GREEN}[+] Results saved to: {output_file} (format: {fmt}){Colors.RESET}")
-        return True
-
-    except Exception as e:
-        print(f"{Colors.RED}[!] Error writing output file: {e}{Colors.RESET}")
-        return False
-
-
-# ──────────────────────────────────────────────
 #  Splash Screen
 # ──────────────────────────────────────────────
 def print_banner():
@@ -277,9 +64,9 @@ def print_banner():
     def _vis_len(s): return len(_re.sub(r'\033\[[0-9;]*m', '', s))
     def _pad(s, w): return s + ' ' * max(0, w - _vis_len(s))
 
-    COL = 28
+    COL = 26
     print()
-    print(f"  {C}{BD}{'~' * 74}{RS}")
+    print(f"  {C}{BD}{'~' * 72}{RS}")
     print()
 
     logo = [
@@ -300,18 +87,17 @@ def print_banner():
         f"  {R}{BD}  \\_________________/{RS}",
     ]
     right = [
-        f" {W}{BD} ____  _____ _   _ ____  _     ___  _     {RS}",
-        f" {C}{BD}|  _ \\| ____| \\ | |  _ \\| |   / _ \\| |    {RS}",
-        f" {C}{BD}| | | |  _| |  \\| | | | | |  | | | | |    {RS}",
-        f" {C}{BD}| |_| | |___| |\\  | |_| | |__| |_| | |___ {RS}",
-        f" {C}{BD}|____/|_____|_| \\_|____/|_____\\___/|_____|{RS}",
-        f"  ",
-        f" {DM}       DONHASH - HASH CRACKER{RS}",
-        f"  ",
-        f" {C}{BD}[+]{RS} {W}{BD}500+ HASH TYPES SUPPORTED{RS}     {DM}fingerprint{RS}",
-        f" {C}{BD}[+]{RS} {W}{BD}30 DETECTION CATEGORIES{RS}       {DM}target{RS}",
-        f" {C}{BD}[+]{RS} {W}{BD}MULTI-THREADED CRACKING{RS}      {DM}zap{RS}",
-        f" {C}{BD}[+]{RS} {W}{BD}MULTI-FORMAT OUTPUT{RS}         {DM}report{RS}",
+        f"  {M}{BD} ____     ___    _   _   _____   _____     ___   {RS}",
+       rf"  {M}{BD}|  _ \   / _ \  | \ | | | ____| |_   _|   / _ \  {RS}",
+       rf"  {M}{BD}| | | | | | | | |  \| | |  _|     | |    | | | | {RS}",
+       rf"  {M}{BD}| |_| | | |_| | | |\  | | |___    | |    | |_| | {RS}",
+       rf"  {M}{BD}|____/   \___/  |_| \_| |_____|   |_|     \___/  {RS}",
+        f"   ",
+        f"  {DM}       HASH DETECTOR & CRACKER{RS}",
+        f"   ",
+        f"  {C}{BD}[+]{RS} {W}{BD}500+ HASH TYPES SUPPORTED{RS}     {DM}fingerprint{RS}",
+        f"  {C}{BD}[+]{RS} {W}{BD}30 DETECTION CATEGORIES{RS}       {DM}target{RS}",
+        f"  {C}{BD}[+]{RS} {W}{BD}MULTI-THREADED CRACKING{RS}      {DM}hexagon{RS}",
     ]
     for i in range(max(len(logo), len(right))):
         l = _pad(logo[i], COL) if i < len(logo) else ' ' * COL
@@ -319,11 +105,11 @@ def print_banner():
         print(f"{l}  {r}")
     print()
 
-    print(f"  {C}{BD}+--------------------------------------------------------------+{RS}")
-    print(f"  {C}{BD}|{RS}  {C}{BD}[*]{RS} {W}DonHash - Hash Cracker{RS}                {C}{BD}|{RS}  {G}{BD}Author : {AUTHOR}{RS}             {C}{BD}|{RS}")
-    print(f"  {C}{BD}|{RS}  {C}{BD}[*]{RS} {W}Detect & crack hashes w/ wordlists{RS}   {C}{BD}|{RS}  {G}{BD}Email  : {EMAIL}{RS}   {C}{BD}|{RS}")
-    print(f"  {C}{BD}|{RS}  {C}{BD}[*]{RS} {W}500+ hash algorithms supported{RS}      {C}{BD}|{RS}  {Y}{BD}Version: v{VERSION}{RS}                    {C}{BD}|{RS}")
-    print(f"  {C}{BD}+--------------------------------------------------------------+{RS}")
+    print(f"  {C}{BD}+------------------------------------------------------------+{RS}")
+    print(f"  {C}{BD}|{RS}  {C}{BD}[*]{RS} {W}DonHash - Hash Detector & Cracker{RS}  {C}{BD}|{RS}  {G}{BD}Author : CySec Don{RS}            {C}{BD}|{RS}")
+    print(f"  {C}{BD}|{RS}  {C}{BD}[*]{RS} {W}Detect & crack hashes w/ wordlists{RS} {C}{BD}|{RS}  {G}{BD}Email  : cysecdon@gmail.com{RS}  {C}{BD}|{RS}")
+    print(f"  {C}{BD}|{RS}  {C}{BD}[*]{RS} {W}500+ hash algorithms supported{RS}    {C}{BD}|{RS}  {Y}{BD}Version: v1.1{RS}                  {C}{BD}|{RS}")
+    print(f"  {C}{BD}+------------------------------------------------------------+{RS}")
     print()
 
     cats = [
@@ -336,22 +122,22 @@ def print_banner():
         ("25 LDAP/DirSvc", "26 Pass Managers", "27 App/Protocol", "28 Legacy Variants"),
         ("29 More Crypto", "30 Signatures", "", ""),
     ]
-    print(f"  {R}{BD}+--------------------------------------------------------------+{RS}")
-    print(f"  {R}{BD}|{RS}  {R}{BD}30 HASH CATEGORIES{RS}                                           {R}{BD}|{RS}")
-    print(f"  {R}{BD}+--------------------------------------------------------------+{RS}")
+    print(f"  {R}{BD}+------------------------------------------------------------+{RS}")
+    print(f"  {R}{BD}|{RS}  {R}{BD}30 HASH CATEGORIES{RS}                                         {R}{BD}|{RS}")
+    print(f"  {R}{BD}+------------------------------------------------------------+{RS}")
     for row in cats:
         parts = [f"{G}{c}{RS}" for c in row if c]
         line = "  |  ".join(parts)
         print(f"  {R}{BD}|{RS}  {line}")
-    print(f"  {R}{BD}+--------------------------------------------------------------+{RS}")
+    print(f"  {R}{BD}+------------------------------------------------------------+{RS}")
     print()
 
-    print(f"  {C}{BD}{'~' * 74}{RS}")
-    print(f"   {R}{BD}>>>{RS} {W}DETECT{RS}  {C}{BD}::{RS}  {W}CRACK{RS}  {C}{BD}::{RS}  {W}REVEAL{RS}  {C}{BD}::{RS}  {DM}v{VERSION}{RS}")
-    print(f"  {C}{BD}{'~' * 74}{RS}")
+    print(f"  {C}{BD}{'~' * 72}{RS}")
+    print(f"   {R}{BD}>>>{RS} {W}DETECT{RS}  {C}{BD}::{RS}  {W}CRACK{RS}  {C}{BD}::{RS}  {W}REVEAL{RS}  {C}{BD}::{RS}  {DM}v1.1{RS}")
+    print(f"  {C}{BD}{'~' * 72}{RS}")
     print()
 
-    for item in ["Initializing DonHash engine", "Loading 500+ detection modules", "Preparing multi-thread handler", "Ready"]:
+    for item in ["Initializing hash engine", "Loading 500+ detection modules", "Preparing wordlist handler", "Ready"]:
         print(f"  {Y}{BD}[*]{RS} {W}{item}...{RS}", end="", flush=True)
         time.sleep(0.12)
         for _ in range(3):
@@ -366,104 +152,6 @@ def print_banner():
     print()
     print(f"  {G}{BD}>>>{RS} {W}Type {C}-h{RS} {W}for help or supply a hash to begin.{RS}")
     print()
-
-
-# ──────────────────────────────────────────────
-#  Pure-Python MD4 Fallback
-#  (OpenSSL 3.0+ deprecated MD4; this ensures NTLM/NT always works)
-# ──────────────────────────────────────────────
-def _md4_pure(data: bytes) -> str:
-    """Pure-Python MD4 implementation per RFC 1320. Returns hex digest."""
-    def F(x, y, z): return (x & y) | ((~x & 0xFFFFFFFF) & z)
-    def G(x, y, z): return (x & y) | (x & z) | (y & z)
-    def H(x, y, z): return x ^ y ^ z
-    def left_rotate(n, b): return ((n << b) | (n >> (32 - b))) & 0xFFFFFFFF
-
-    # Pre-processing: adding padding bits
-    msg = bytearray(data)
-    orig_len = len(data) * 8
-    msg.append(0x80)
-    while len(msg) % 64 != 56:
-        msg.append(0x00)
-    msg += struct.pack('<Q', orig_len)
-
-    A = 0x67452301
-    B = 0xEFCDAB89
-    C = 0x98BADCFE
-    D = 0x10325476
-
-    for i in range(0, len(msg), 64):
-        X = list(struct.unpack('<16I', msg[i:i+64]))
-        AA, BB, CC, DD = A, B, C, D
-
-        # Round 1
-        A = left_rotate((A + F(B,C,D) + X[0]) & 0xFFFFFFFF, 3)
-        D = left_rotate((D + F(A,B,C) + X[1]) & 0xFFFFFFFF, 7)
-        C = left_rotate((C + F(D,A,B) + X[2]) & 0xFFFFFFFF, 11)
-        B = left_rotate((B + F(C,D,A) + X[3]) & 0xFFFFFFFF, 19)
-        A = left_rotate((A + F(B,C,D) + X[4]) & 0xFFFFFFFF, 3)
-        D = left_rotate((D + F(A,B,C) + X[5]) & 0xFFFFFFFF, 7)
-        C = left_rotate((C + F(D,A,B) + X[6]) & 0xFFFFFFFF, 11)
-        B = left_rotate((B + F(C,D,A) + X[7]) & 0xFFFFFFFF, 19)
-        A = left_rotate((A + F(B,C,D) + X[8]) & 0xFFFFFFFF, 3)
-        D = left_rotate((D + F(A,B,C) + X[9]) & 0xFFFFFFFF, 7)
-        C = left_rotate((C + F(D,A,B) + X[10]) & 0xFFFFFFFF, 11)
-        B = left_rotate((B + F(C,D,A) + X[11]) & 0xFFFFFFFF, 19)
-        A = left_rotate((A + F(B,C,D) + X[12]) & 0xFFFFFFFF, 3)
-        D = left_rotate((D + F(A,B,C) + X[13]) & 0xFFFFFFFF, 7)
-        C = left_rotate((C + F(D,A,B) + X[14]) & 0xFFFFFFFF, 11)
-        B = left_rotate((B + F(C,D,A) + X[15]) & 0xFFFFFFFF, 19)
-
-        # Round 2
-        A = left_rotate((A + G(B,C,D) + X[0] + 0x5A827999) & 0xFFFFFFFF, 3)
-        D = left_rotate((D + G(A,B,C) + X[4] + 0x5A827999) & 0xFFFFFFFF, 5)
-        C = left_rotate((C + G(D,A,B) + X[8] + 0x5A827999) & 0xFFFFFFFF, 9)
-        B = left_rotate((B + G(C,D,A) + X[12] + 0x5A827999) & 0xFFFFFFFF, 13)
-        A = left_rotate((A + G(B,C,D) + X[1] + 0x5A827999) & 0xFFFFFFFF, 3)
-        D = left_rotate((D + G(A,B,C) + X[5] + 0x5A827999) & 0xFFFFFFFF, 5)
-        C = left_rotate((C + G(D,A,B) + X[9] + 0x5A827999) & 0xFFFFFFFF, 9)
-        B = left_rotate((B + G(C,D,A) + X[13] + 0x5A827999) & 0xFFFFFFFF, 13)
-        A = left_rotate((A + G(B,C,D) + X[2] + 0x5A827999) & 0xFFFFFFFF, 3)
-        D = left_rotate((D + G(A,B,C) + X[6] + 0x5A827999) & 0xFFFFFFFF, 5)
-        C = left_rotate((C + G(D,A,B) + X[10] + 0x5A827999) & 0xFFFFFFFF, 9)
-        B = left_rotate((B + G(C,D,A) + X[14] + 0x5A827999) & 0xFFFFFFFF, 13)
-        A = left_rotate((A + G(B,C,D) + X[3] + 0x5A827999) & 0xFFFFFFFF, 3)
-        D = left_rotate((D + G(A,B,C) + X[7] + 0x5A827999) & 0xFFFFFFFF, 5)
-        C = left_rotate((C + G(D,A,B) + X[11] + 0x5A827999) & 0xFFFFFFFF, 9)
-        B = left_rotate((B + G(C,D,A) + X[15] + 0x5A827999) & 0xFFFFFFFF, 13)
-
-        # Round 3
-        A = left_rotate((A + H(B,C,D) + X[0] + 0x6ED9EBA1) & 0xFFFFFFFF, 3)
-        D = left_rotate((D + H(A,B,C) + X[8] + 0x6ED9EBA1) & 0xFFFFFFFF, 9)
-        C = left_rotate((C + H(D,A,B) + X[4] + 0x6ED9EBA1) & 0xFFFFFFFF, 11)
-        B = left_rotate((B + H(C,D,A) + X[12] + 0x6ED9EBA1) & 0xFFFFFFFF, 15)
-        A = left_rotate((A + H(B,C,D) + X[2] + 0x6ED9EBA1) & 0xFFFFFFFF, 3)
-        D = left_rotate((D + H(A,B,C) + X[10] + 0x6ED9EBA1) & 0xFFFFFFFF, 9)
-        C = left_rotate((C + H(D,A,B) + X[6] + 0x6ED9EBA1) & 0xFFFFFFFF, 11)
-        B = left_rotate((B + H(C,D,A) + X[14] + 0x6ED9EBA1) & 0xFFFFFFFF, 15)
-        A = left_rotate((A + H(B,C,D) + X[1] + 0x6ED9EBA1) & 0xFFFFFFFF, 3)
-        D = left_rotate((D + H(A,B,C) + X[9] + 0x6ED9EBA1) & 0xFFFFFFFF, 9)
-        C = left_rotate((C + H(D,A,B) + X[5] + 0x6ED9EBA1) & 0xFFFFFFFF, 11)
-        B = left_rotate((B + H(C,D,A) + X[13] + 0x6ED9EBA1) & 0xFFFFFFFF, 15)
-        A = left_rotate((A + H(B,C,D) + X[3] + 0x6ED9EBA1) & 0xFFFFFFFF, 3)
-        D = left_rotate((D + H(A,B,C) + X[11] + 0x6ED9EBA1) & 0xFFFFFFFF, 9)
-        C = left_rotate((C + H(D,A,B) + X[7] + 0x6ED9EBA1) & 0xFFFFFFFF, 11)
-        B = left_rotate((B + H(C,D,A) + X[15] + 0x6ED9EBA1) & 0xFFFFFFFF, 15)
-
-        A = (A + AA) & 0xFFFFFFFF
-        B = (B + BB) & 0xFFFFFFFF
-        C = (C + CC) & 0xFFFFFFFF
-        D = (D + DD) & 0xFFFFFFFF
-
-    return struct.pack('<4I', A, B, C, D).hex()
-
-
-def _md4(data: bytes) -> str:
-    """Compute MD4 hash, using hashlib if available, pure-Python fallback otherwise."""
-    try:
-        return hashlib.new("md4", data).hexdigest()
-    except (ValueError, TypeError):
-        return _md4_pure(data)
 
 
 # ──────────────────────────────────────────────
@@ -487,29 +175,6 @@ def _crc16(data: bytes, poly: int, init: int = 0, xorout: int = 0, refin: bool =
         crc = int('{:016b}'.format(crc)[::-1], 2)
     return crc ^ xorout
 
-
-def _crc24(data: bytes, poly: int = 0x864CFB, init: int = 0xB704CE, xorout: int = 0, refin: bool = False, refout: bool = False) -> int:
-    """CRC-24 calculator (RFC 4880 / OpenPGP polynomial).
-
-    Default polynomial 0x864CFB with init 0xB704CE matches the
-    CRC-24 defined in RFC 4880 for OpenPGP.
-    """
-    crc = init
-    for byte in data:
-        if refin:
-            byte = int('{:08b}'.format(byte)[::-1], 2)
-        crc ^= byte << 16
-        for _ in range(8):
-            if crc & 0x800000:
-                crc = (crc << 1) ^ poly
-            else:
-                crc <<= 1
-            crc &= 0xFFFFFF
-    if refout:
-        crc = int('{:024b}'.format(crc)[::-1], 2)
-    return crc ^ xorout
-
-
 def _crc32_generic(data: bytes, poly: int, init: int = 0xFFFFFFFF, xorout: int = 0xFFFFFFFF, refin: bool = True, refout: bool = True) -> int:
     """Generic CRC-32 calculator."""
     crc = init
@@ -527,7 +192,6 @@ def _crc32_generic(data: bytes, poly: int, init: int = 0xFFFFFFFF, xorout: int =
         crc = int('{:032b}'.format(crc)[::-1], 2)
     return crc ^ xorout
 
-
 def _crc64(data: bytes, poly: int, init: int = 0, xorout: int = 0, refin: bool = False, refout: bool = False) -> int:
     """Generic CRC-64 calculator."""
     crc = init
@@ -544,7 +208,6 @@ def _crc64(data: bytes, poly: int, init: int = 0, xorout: int = 0, refin: bool =
     if refout:
         crc = int('{:064b}'.format(crc)[::-1], 2)
     return crc ^ xorout
-
 
 def _reflect_bits(val: int, width: int) -> int:
     return int('{:0{w}b}'.format(val, w=width)[::-1], 2)
@@ -581,10 +244,9 @@ def djb2(data: bytes) -> int:
     return h
 
 def sdbm(data: bytes) -> int:
-    """SDBM hash — fixed operator precedence: entire expression masked to 32 bits."""
     h = 0
     for b in data:
-        h = (b + (h << 6) + (h << 16) - h) & 0xFFFFFFFF
+        h = b + (h << 6) + (h << 16) - h & 0xFFFFFFFF
     return h
 
 def jenkins_one_at_a_time(data: bytes) -> int:
@@ -599,10 +261,9 @@ def jenkins_one_at_a_time(data: bytes) -> int:
     return h
 
 def elf_hash(data: bytes) -> int:
-    """ELF hash — fixed operator precedence: ((h << 4) + b) masked to 32 bits."""
     h = 0; g = 0
     for b in data:
-        h = ((h << 4) + b) & 0xFFFFFFFF
+        h = (h << 4) + b & 0xFFFFFFFF
         g = h & 0xF0000000
         if g:
             h ^= g >> 24
@@ -1274,7 +935,6 @@ SALTED_TYPES = {
     "sha256(unicode(pass).salt)", "sha512(unicode(pass).salt)", "sha256(salt.unicode(pass))",
     "HMAC-MD5(salt)", "HMAC-SHA1(salt)", "HMAC-SHA256(salt)", "HMAC-SHA512(salt)",
     "HMAC-RIPEMD160(salt)", "HMAC-Streebog-256(salt)", "HMAC-Streebog-512(salt)",
-    "PostgreSQL-MD5",
 }
 
 CRYPT_TYPES = {
@@ -1288,7 +948,7 @@ CRYPT_TYPES = {
     "Django(SHA-256)", "Django(SHA-1)", "Django(MD5)",
     "Django(PBKDF2-SHA1)", "Django(PBKDF2-SHA256)", "Django(bcrypt)", "Django(bcrypt-SHA256)",
     "WordPress-phpass", "WordPress-2.6.2+", "PHPass",
-    "Netscape-LDAP-SSHA", "SSHA1-Base64",
+    "Netscape-LDAP-SSHA", "Netscape-LDAP-SSHA", "SSHA1-Base64",
     "OpenLDAP-SSHA", "OpenLDAP-SSHA256", "OpenLDAP-SSHA512", "SSHA512-Base64", "LDAP-SSHA512",
     "Cisco-Type8", "Cisco-Type9", "Cisco-IOS-SHA256", "Cisco-Type4",
     "GRUB2-pbkdf2", "AIX-smd5", "AIX-ssha1", "AIX-ssha256", "AIX-ssha512",
@@ -1320,7 +980,7 @@ def compute_hash(word: str, hash_type: str, salt: str = "") -> Optional[str]:
     if hash_type == "CRC-16-XMODEM":   return format(_crc16(enc, 0x1021), '04x')
     if hash_type == "CRC-16-USB":      return format(_crc16(enc, 0x8005, init=0xFFFF, refin=True, refout=True, xorout=0xFFFF), '04x')
     if hash_type == "CRC-16-ZMODEM":   return format(_crc16(enc, 0x1021), '04x')
-    if hash_type == "CRC-24":          return format(_crc24(enc), '06x')  # Fixed: proper CRC-24 (RFC 4880)
+    if hash_type == "CRC-24":          return format(_crc16(enc, 0x864CFB) & 0xFFFFFF, '06x')  # simplified
     if hash_type == "CRC-32":          return format(binascii.crc32(enc) & 0xFFFFFFFF, '08x')
     if hash_type == "CRC-32B":         return format(binascii.crc32(enc) & 0xFFFFFFFF, '08x')
     if hash_type == "CRC-32C":         return format(_crc32_generic(enc, 0x1EDC6F41), '08x')
@@ -1349,7 +1009,7 @@ def compute_hash(word: str, hash_type: str, salt: str = "") -> Optional[str]:
 
     # ── MD Family ──
     if hash_type == "MD2":           return _try_hashlib("md2", enc)
-    if hash_type == "MD4":           return _md4(enc)
+    if hash_type == "MD4":           return _try_hashlib("md4", enc)
     if hash_type == "MD5":           return hashlib.md5(enc).hexdigest()
     if hash_type == "MD6":           return None
     if hash_type == "Half-MD5":      return hashlib.md5(enc).hexdigest()[:16]
@@ -1421,7 +1081,8 @@ def compute_hash(word: str, hash_type: str, salt: str = "") -> Optional[str]:
 
     # ── Windows Auth ──
     if hash_type in ("NTLM", "NT"):
-        return _md4(enc16)
+        try: return hashlib.new("md4", enc16).hexdigest()
+        except ValueError: return None
 
     # ── Database ──
     if hash_type == "MySQL323":
@@ -1438,15 +1099,6 @@ def compute_hash(word: str, hash_type: str, salt: str = "") -> Optional[str]:
         s1 = hashlib.sha1(enc).digest()
         s2 = hashlib.sha1(s1).hexdigest()
         return ("*" + s2.upper()) if hash_type == "MySQL4.1" else s2.upper()
-
-    # ── PostgreSQL-MD5 (Fixed) ──
-    # PostgreSQL stores: "md5" + md5(password + username)
-    # The salt parameter MUST be the username for PostgreSQL-MD5.
-    if hash_type == "PostgreSQL-MD5":
-        if not salt:
-            return None  # username (salt) is required for PostgreSQL-MD5
-        inner = hashlib.md5(word.encode("utf-8") + salt.encode("utf-8")).hexdigest()
-        return "md5" + inner
 
     # ── HMAC variants (key = pass) ──
     if hash_type == "HMAC-MD5(pass)":     return hmac_mod.new(enc, salt.encode(), 'md5').hexdigest() if salt else hmac_mod.new(b'', enc, 'md5').hexdigest()
@@ -1523,11 +1175,9 @@ def compute_crypt_hash(word: str, original_hash: str, hash_type: str, salt: str 
         s = salt or (original_hash.split("$")[2] if len(original_hash.split("$")) > 2 else "")
         return crypt.crypt(word, f"$6${s}$")
 
-    # Fixed: bcrypt-2x now properly handled with $2x$ prefix
-    if hash_type in ("bcrypt", "bcrypt-2b", "bcrypt-2x", "bcrypt-OpenBSD", "bcrypt(SHA256)", "bcrypt(SHA512)"):
+    if hash_type in ("bcrypt", "bcrypt-2b", "bcrypt-OpenBSD", "bcrypt(SHA256)", "bcrypt(SHA512)"):
         try:
             import bcrypt as _bcrypt
-            # bcrypt.hashpw uses the prefix from the original hash ($2a$, $2b$, $2x$ etc.)
             return _bcrypt.hashpw(word.encode(), original_hash.encode()).decode()
         except ImportError:
             return None
@@ -1535,11 +1185,7 @@ def compute_crypt_hash(word: str, original_hash: str, hash_type: str, salt: str 
     if hash_type in ("bcrypt-2y",):
         try:
             import bcrypt as _bcrypt
-            # Replace $2y$ with $2b$ for Python bcrypt compatibility, then compare
-            check_hash = original_hash.replace("$2y$", "$2b$", 1)
-            result = _bcrypt.hashpw(word.encode(), check_hash.encode()).decode()
-            # Restore original prefix for comparison
-            return result.replace("$2b$", "$2y$", 1)
+            return _bcrypt.hashpw(word.encode(), original_hash.encode()).decode()
         except ImportError:
             return None
 
@@ -1624,6 +1270,9 @@ def compute_crypt_hash(word: str, original_hash: str, hash_type: str, salt: str 
         except ImportError:
             return None
 
+    if hash_type in ("PostgreSQL-MD5",):
+        return "md5" + hashlib.md5(word.encode() + salt.encode()).hexdigest()
+
     return None
 
 
@@ -1644,242 +1293,127 @@ def extract_salt(hash_str: str, hash_type: str) -> str:
         parts = h.split("$")
         return parts[2] if len(parts) >= 3 else ""
 
-    # PostgreSQL MD5: md5<hash> — salt IS the username (must be provided externally)
+    # PostgreSQL MD5: md5<hash> — salt is username
     if hash_type == "PostgreSQL-MD5":
-        return ""  # username must be provided via -s/--salt flag
+        return ""  # needs external username
 
     return ""
 
 
 # ──────────────────────────────────────────────
-#  Wordlist Utilities
+#  Hash Cracking - Helper Functions
 # ──────────────────────────────────────────────
-
-def _open_wordlist(path: str):
-    """Open a wordlist file, supporting .gz compressed files."""
-    if path.endswith('.gz'):
-        return gzip.open(path, 'rt', encoding='utf-8', errors='ignore')
-    return open(path, 'r', encoding='utf-8', errors='ignore')
-
-
-def validate_wordlist(path: str) -> Tuple[bool, str]:
-    """Validate that a wordlist file exists and is readable.
-    Returns (is_valid, message)."""
-    if not os.path.exists(path):
-        # Check if path.gz exists
-        gz_path = path + '.gz'
-        if os.path.exists(gz_path):
-            return True, f"Found compressed: {gz_path}"
-        searched = [
-            path,
-            os.path.expanduser(f"~/wordlists/{os.path.basename(path)}"),
-            f"/usr/share/wordlists/{os.path.basename(path)}",
-            f"/opt/{os.path.basename(path)}",
-        ]
-        locs = "\n  ".join(searched)
-        return False, (f"Wordlist not found: {path}\n"
-                       f"  Searched locations:\n  {locs}\n"
-                       f"  Tip: Use -w to specify the full path, or place rockyou.txt in a standard location.")
-    if not os.path.isfile(path):
-        return False, f"Path exists but is not a file: {path}"
-    try:
-        with _open_wordlist(path) as f:
-            f.readline()
-    except PermissionError:
-        return False, f"Permission denied reading: {path}"
-    except Exception as e:
-        return False, f"Error reading wordlist: {e}"
-    return True, "OK"
-
-
-def wordlist_info(path: str) -> None:
-    """Display wordlist statistics."""
-    is_valid, msg = validate_wordlist(path)
-    if not is_valid:
-        print(f"{Colors.RED}[!] {msg}{Colors.RESET}")
-        return
-
-    actual_path = path
-    if not os.path.exists(path) and os.path.exists(path + '.gz'):
-        actual_path = path + '.gz'
-
-    file_size = os.path.getsize(actual_path)
-    if file_size >= 1073741824:
-        size_str = f"{file_size / 1073741824:.2f} GB"
-    elif file_size >= 1048576:
-        size_str = f"{file_size / 1048576:.2f} MB"
-    elif file_size >= 1024:
-        size_str = f"{file_size / 1024:.2f} KB"
+def _check_word(word, target_norm, hash_type, salt, is_salted, is_crypt, target_hash):
+    """Check a single word against the target hash. Returns True if match."""
+    if is_crypt:
+        cand = compute_crypt_hash(word, target_hash, hash_type, salt)
+        return cand is not None and cand == target_hash
+    elif is_salted:
+        cand = compute_hash(word, hash_type, salt)
+        return cand is not None and cand.lower() == target_norm
     else:
-        size_str = f"{file_size} bytes"
+        cand = compute_hash(word, hash_type)
+        return cand is not None and cand.lower() == target_norm
 
-    # Count lines
-    line_count = 0
-    max_len = 0
-    min_len = float('inf')
+
+def _crack_single_thread(target_hash, target_norm, hash_type, wordlist_path,
+                          is_crypt, is_salted, salt, verbose, total, start_time):
+    """Single-threaded cracking."""
+    found = False
+    word = ""
+    attempts = 0
     try:
-        with _open_wordlist(actual_path) as f:
+        with open(wordlist_path, "r", encoding="utf-8", errors="ignore") as f:
             for line in f:
-                w = line.rstrip("\n\r")
-                line_count += 1
-                wlen = len(w)
-                if wlen > max_len:
-                    max_len = wlen
-                if wlen < min_len and wlen > 0:
-                    min_len = wlen
-    except Exception:
-        pass
-
-    if min_len == float('inf'):
-        min_len = 0
-
-    compressed = " (gzip compressed)" if actual_path.endswith('.gz') else ""
-
-    print(f"\n{Colors.CYAN}{Colors.BOLD}  WORDLIST INFO{Colors.RESET}\n")
-    print(f"  {Colors.WHITE}File     :{Colors.RESET} {actual_path}{compressed}")
-    print(f"  {Colors.WHITE}Size     :{Colors.RESET} {size_str}")
-    print(f"  {Colors.WHITE}Lines    :{Colors.RESET} {line_count:,}")
-    print(f"  {Colors.WHITE}Min len  :{Colors.RESET} {min_len}")
-    print(f"  {Colors.WHITE}Max len  :{Colors.RESET} {max_len}")
-    print()
+                word = line.rstrip("\n\r")
+                attempts += 1
+                if _check_word(word, target_norm, hash_type, salt, is_salted, is_crypt, target_hash):
+                    found = True
+                    break
+                if verbose and attempts % 50000 == 0:
+                    el = time.time() - start_time
+                    rate = attempts / el if el > 0 else 0
+                    print(f"  {Colors.DIM}[Progress] {attempts:,}/{total:,} "
+                          f"({attempts/total*100:.1f}%) | {rate:,.0f} h/s | "
+                          f"{el:.1f}s{Colors.RESET}", end="\r")
+    except KeyboardInterrupt:
+        print(f"\n{Colors.YELLOW}[!] Interrupted.{Colors.RESET}")
+    return found, word, attempts
 
 
-# ──────────────────────────────────────────────
-#  Thread-Safe Progress Tracker
-# ──────────────────────────────────────────────
+def _crack_multi_thread(target_hash, target_norm, hash_type, wordlist_path,
+                         is_salted, salt, verbose, total, num_threads, start_time):
+    """Multi-threaded cracking using ThreadPoolExecutor."""
+    found = False
+    found_word = ""
+    total_attempts = 0
+    lock = threading.Lock()
+    stop_event = threading.Event()
 
-class ProgressTracker:
-    """Thread-safe progress tracker for cracking operations."""
+    # Read all words into memory
+    words = []
+    try:
+        with open(wordlist_path, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                words.append(line.rstrip("\n\r"))
+    except KeyboardInterrupt:
+        print(f"\n{Colors.YELLOW}[!] Interrupted while reading wordlist.{Colors.RESET}")
+        return False, "", 0
 
-    def __init__(self, total: int, verbose: bool = False):
-        self.total = total
-        self.attempts = 0
-        self.found = False
-        self.result_word = ""
-        self.lock = threading.Lock()
-        self.verbose = verbose
-        self.start_time = time.time()
-        self._last_update = 0.0
+    chunk_size = max(1, len(words) // num_threads)
+    chunks = [words[i:i + chunk_size] for i in range(0, len(words), chunk_size)]
 
-    def add_attempts(self, count: int):
-        with self.lock:
-            self.attempts += count
+    def process_chunk(chunk, chunk_id):
+        nonlocal found, found_word, total_attempts
+        local_attempts = 0
+        for word in chunk:
+            if stop_event.is_set():
+                return
+            local_attempts += 1
+            if _check_word(word, target_norm, hash_type, salt, is_salted, False, target_hash):
+                with lock:
+                    if not found:
+                        found = True
+                        found_word = word
+                        stop_event.set()
+        with lock:
+            total_attempts += local_attempts
 
-    def set_found(self, word: str):
-        with self.lock:
-            self.found = True
-            self.result_word = word
+    try:
+        with ThreadPoolExecutor(max_workers=num_threads) as executor:
+            futures = [executor.submit(process_chunk, chunk, i) for i, chunk in enumerate(chunks)]
+            for future in as_completed(futures):
+                if stop_event.is_set():
+                    break
+    except KeyboardInterrupt:
+        stop_event.set()
+        print(f"\n{Colors.YELLOW}[!] Interrupted.{Colors.RESET}")
 
-    def is_found(self) -> bool:
-        with self.lock:
-            return self.found
-
-    def get_progress(self) -> Tuple[int, int, float]:
-        """Returns (attempts, total, elapsed_seconds)."""
-        with self.lock:
-            return self.attempts, self.total, time.time() - self.start_time
-
-    def maybe_print(self, thread_count: int = 0):
-        """Print progress if verbose and enough time has passed."""
-        if not self.verbose:
-            return
-        now = time.time()
-        if now - self._last_update < 0.5:
-            return
-        self._last_update = now
-        attempts, total, elapsed = self.get_progress()
-        if elapsed <= 0 or total <= 0:
-            return
-        rate = attempts / elapsed
-        pct = attempts / total * 100
-        remaining = (total - attempts) / rate if rate > 0 else 0
-        eta_str = str(timedelta(seconds=int(remaining)))
-        threads_str = f" | {Colors.CYAN}{thread_count}T{Colors.RESET}" if thread_count else ""
-        print(f"  {Colors.DIM}[Progress] {attempts:,}/{total:,} "
-              f"({pct:.1f}%) | {rate:,.0f} h/s{threads_str} | "
-              f"ETA: {eta_str} | {elapsed:.1f}s{Colors.RESET}", end="\r")
-
-
-# ──────────────────────────────────────────────
-#  Thread Worker
-# ──────────────────────────────────────────────
-
-def _crack_worker(
-    words: List[str],
-    target_hash: str,
-    target_norm: str,
-    hash_type: str,
-    salt: str,
-    is_crypt: bool,
-    is_salted: bool,
-    tracker: ProgressTracker,
-) -> Optional[str]:
-    """Worker function for threaded cracking. Returns the found word or None."""
-    batch_count = 0
-    for word in words:
-        if tracker.is_found():
-            # Flush remaining batch count before exiting
-            if batch_count > 0:
-                tracker.add_attempts(batch_count)
-            return None
-
-        batch_count += 1
-
-        try:
-            if is_crypt:
-                cand = compute_crypt_hash(word, target_hash, hash_type, salt)
-                if cand and cand == target_hash:
-                    tracker.add_attempts(batch_count)
-                    tracker.set_found(word)
-                    return word
-            elif is_salted:
-                cand = compute_hash(word, hash_type, salt)
-                if cand and cand.lower() == target_norm:
-                    tracker.add_attempts(batch_count)
-                    tracker.set_found(word)
-                    return word
-            else:
-                cand = compute_hash(word, hash_type)
-                if cand and cand.lower() == target_norm:
-                    tracker.add_attempts(batch_count)
-                    tracker.set_found(word)
-                    return word
-        except Exception:
-            pass
-
-        if batch_count >= 1000:
-            tracker.add_attempts(batch_count)
-            batch_count = 0
-
-    if batch_count > 0:
-        tracker.add_attempts(batch_count)
-
-    return None
+    return found, found_word, total_attempts
 
 
 # ──────────────────────────────────────────────
 #  Hash Cracking
 # ──────────────────────────────────────────────
-
 def crack_single_hash(
     target_hash: str, hash_type: str, wordlist_path: str,
-    verbose: bool = False, ext_salt: str = "",
-    num_threads: int = 4, no_thread: bool = False,
-    timeout: Optional[float] = None, output_file: Optional[str] = None,
-    output_format: str = "txt",
-) -> Optional[str]:
-    """Attempt to crack a single hash using the provided wordlist."""
+    verbose: bool = False, ext_salt: str = "", num_threads: int = 5
+) -> dict:
+    """Attempt to crack a single hash using the provided wordlist with multi-threading."""
+    result = {
+        "hash": target_hash,
+        "type": hash_type,
+        "category": "",
+        "password": None,
+        "attempts": 0,
+        "time": 0.0,
+        "speed": 0.0,
+        "status": "not_found"
+    }
 
-    # Validate wordlist
-    is_valid, msg = validate_wordlist(wordlist_path)
-    if not is_valid:
-        print(f"{Colors.RED}[!] {msg}{Colors.RESET}")
-        return None
-
-    # Determine actual path (may be .gz)
-    actual_path = wordlist_path
-    if not os.path.exists(wordlist_path) and os.path.exists(wordlist_path + '.gz'):
-        actual_path = wordlist_path + '.gz'
+    if not os.path.isfile(wordlist_path):
+        print(f"{Colors.RED}[!] Wordlist not found: {wordlist_path}{Colors.RESET}")
+        return result
 
     target_norm = target_hash.strip().lower()
     is_crypt = hash_type in CRYPT_TYPES
@@ -1887,191 +1421,78 @@ def crack_single_hash(
     salt = ext_salt or extract_salt(target_hash, hash_type)
 
     # Warn if salt is needed but not provided
-    if is_salted and not salt:
-        if hash_type == "PostgreSQL-MD5":
-            print(f"{Colors.YELLOW}[!] PostgreSQL-MD5 requires the username as salt. Use -s/--salt to provide the username.{Colors.RESET}")
-        else:
-            print(f"{Colors.YELLOW}[!] This hash type requires a salt. Use -s/--salt to provide one.{Colors.RESET}")
-            print(f"{Colors.YELLOW}[!] Cracking without salt will likely fail for: {hash_type}{Colors.RESET}")
+    if is_salted and not salt and hash_type in SALTED_TYPES:
+        print(f"{Colors.YELLOW}[!] This hash type requires a salt. Use -s/--salt to provide one.{Colors.RESET}")
+        print(f"{Colors.YELLOW}[!] Cracking without salt will likely fail for: {hash_type}{Colors.RESET}")
 
     # Count lines
     total = 0
     try:
-        with _open_wordlist(actual_path) as f:
+        with open(wordlist_path, "r", encoding="utf-8", errors="ignore") as f:
             for _ in f: total += 1
     except Exception as e:
         print(f"{Colors.RED}[!] Error reading wordlist: {e}{Colors.RESET}")
-        return None
+        return result
 
     cat = HASH_DB.get(hash_type, {}).get("cat", 0)
     cat_name = CATEGORY_NAMES.get(cat, "Unknown")
-    print(f"{Colors.BLUE}[*] Starting DonHash crack for {Colors.BOLD}{hash_type}{Colors.RESET}{Colors.BLUE} [{cat_name}]...{Colors.RESET}")
+    result["category"] = cat_name
+
+    print(f"{Colors.BLUE}[*] Starting crack for {Colors.BOLD}{hash_type}{Colors.RESET}{Colors.BLUE} [{cat_name}]...{Colors.RESET}")
     print(f"{Colors.BLUE}[*] Target: {target_hash}{Colors.RESET}")
-    print(f"{Colors.BLUE}[*] Wordlist: {actual_path} ({total:,} entries){Colors.RESET}")
+    print(f"{Colors.BLUE}[*] Wordlist: {wordlist_path} ({total:,} entries){Colors.RESET}")
+    print(f"{Colors.BLUE}[*] Threads: {num_threads}{Colors.RESET}")
     if salt:
-        salt_label = "username" if hash_type == "PostgreSQL-MD5" else "salt"
-        print(f"{Colors.BLUE}[*] {salt_label.capitalize()}: {salt}{Colors.RESET}")
-    mode = "Single-threaded" if no_thread else f"Multi-threaded ({min(num_threads, 32)} threads)"
-    print(f"{Colors.BLUE}[*] Mode: {mode}{Colors.RESET}")
-    if timeout:
-        print(f"{Colors.BLUE}[*] Timeout: {timeout}s{Colors.RESET}")
+        print(f"{Colors.BLUE}[*] Salt: {salt}{Colors.RESET}")
     print()
-
-    # Load all words into memory for chunking
-    words_list: List[str] = []
-    try:
-        with _open_wordlist(actual_path) as f:
-            for line in f:
-                words_list.append(line.rstrip("\n\r"))
-    except Exception as e:
-        print(f"{Colors.RED}[!] Error reading wordlist: {e}{Colors.RESET}")
-        return None
-
-    tracker = ProgressTracker(total, verbose)
-    found_word: Optional[str] = None
 
     start = time.time()
 
-    try:
-        if no_thread or num_threads <= 1:
-            # ── Single-threaded mode ──
-            attempts = 0
-            for word in words_list:
-                if timeout and (time.time() - start) >= timeout:
-                    print(f"\n{Colors.YELLOW}[!] Timeout reached ({timeout}s).{Colors.RESET}")
-                    break
-
-                attempts += 1
-                if is_crypt:
-                    cand = compute_crypt_hash(word, target_hash, hash_type, salt)
-                    if cand and cand == target_hash:
-                        found_word = word; break
-                elif is_salted:
-                    cand = compute_hash(word, hash_type, salt)
-                    if cand and cand.lower() == target_norm:
-                        found_word = word; break
-                else:
-                    cand = compute_hash(word, hash_type)
-                    if cand and cand.lower() == target_norm:
-                        found_word = word; break
-
-                if verbose and attempts % 50000 == 0:
-                    el = time.time() - start
-                    rate = attempts / el if el > 0 else 0
-                    remaining = (total - attempts) / rate if rate > 0 else 0
-                    eta_str = str(timedelta(seconds=int(remaining)))
-                    print(f"  {Colors.DIM}[Progress] {attempts:,}/{total:,} "
-                          f"({attempts/total*100:.1f}%) | {rate:,.0f} h/s | "
-                          f"ETA: {eta_str} | {el:.1f}s{Colors.RESET}", end="\r")
-            tracker.add_attempts(attempts)
-        else:
-            # ── Multi-threaded mode ──
-            actual_threads = min(num_threads, 32)
-            chunk_size = max(1, len(words_list) // actual_threads)
-            chunks = []
-            for i in range(0, len(words_list), chunk_size):
-                chunks.append(words_list[i:i + chunk_size])
-
-            # If more chunks than threads, merge tail chunks
-            while len(chunks) > actual_threads:
-                last = chunks.pop()
-                chunks[-1].extend(last)
-
-            with concurrent.futures.ThreadPoolExecutor(max_workers=actual_threads) as executor:
-                futures = []
-                for chunk in chunks:
-                    future = executor.submit(
-                        _crack_worker,
-                        chunk, target_hash, target_norm,
-                        hash_type, salt, is_crypt, is_salted,
-                        tracker,
-                    )
-                    futures.append(future)
-
-                # Monitor progress
-                while not tracker.is_found():
-                    tracker.maybe_print(actual_threads)
-                    done_count = sum(1 for f in futures if f.done())
-                    if done_count == len(futures):
-                        break
-                    if timeout and (time.time() - start) >= timeout:
-                        print(f"\n{Colors.YELLOW}[!] Timeout reached ({timeout}s).{Colors.RESET}")
-                        executor.shutdown(wait=False, cancel_futures=True)
-                        break
-                    time.sleep(0.3)
-
-                # Collect results
-                for future in concurrent.futures.as_completed(futures):
-                    try:
-                        result = future.result(timeout=5)
-                        if result is not None:
-                            found_word = result
-                    except Exception:
-                        pass
-
-    except KeyboardInterrupt:
-        print(f"\n{Colors.YELLOW}[!] Interrupted.{Colors.RESET}")
-        return None
+    # For crypt types that need the full hash for crypt.crypt(), use single-threaded
+    if is_crypt or num_threads <= 1:
+        found, word, attempts = _crack_single_thread(
+            target_hash, target_norm, hash_type, wordlist_path,
+            is_crypt, is_salted, salt, verbose, total, start
+        )
+    else:
+        found, word, attempts = _crack_multi_thread(
+            target_hash, target_norm, hash_type, wordlist_path,
+            is_salted, salt, verbose, total, num_threads, start
+        )
 
     elapsed = time.time() - start
-    final_attempts, _, _ = tracker.get_progress()
-    rate = final_attempts / elapsed if elapsed > 0 else 0
+    rate = attempts / elapsed if elapsed > 0 else 0
 
-    if found_word:
+    result["attempts"] = attempts
+    result["time"] = round(elapsed, 2)
+    result["speed"] = round(rate, 1)
+
+    if found:
+        result["password"] = word
+        result["status"] = "cracked"
         print(f"\n{Colors.GREEN}{Colors.BOLD}[+] HASH CRACKED!{Colors.RESET}")
-        print(f"{Colors.GREEN}    Password : {Colors.BOLD}{found_word}{Colors.RESET}")
+        print(f"{Colors.GREEN}    Password : {Colors.BOLD}{word}{Colors.RESET}")
         print(f"{Colors.GREEN}    Hash Type: {hash_type}{Colors.RESET}")
         print(f"{Colors.GREEN}    Category : {cat_name}{Colors.RESET}")
-        print(f"{Colors.GREEN}    Attempts : {final_attempts:,}{Colors.RESET}")
+        print(f"{Colors.GREEN}    Attempts : {attempts:,}{Colors.RESET}")
         print(f"{Colors.GREEN}    Time     : {elapsed:.2f}s{Colors.RESET}")
         print(f"{Colors.GREEN}    Speed    : {rate:,.0f} hash/sec{Colors.RESET}")
-
-        # Save to output file if specified
-        if output_file:
-            result_data = [{
-                "hash": target_hash,
-                "hash_type": hash_type,
-                "password": found_word,
-                "category": cat_name,
-                "attempts": final_attempts,
-                "time": elapsed,
-                "speed": rate,
-            }]
-            write_output(result_data, output_file, output_format)
-
-        return found_word
+        print(f"{Colors.GREEN}    Threads  : {num_threads}{Colors.RESET}")
     else:
+        result["status"] = "not_found"
         print(f"\n{Colors.RED}[-] Password not found in wordlist.{Colors.RESET}")
-        print(f"{Colors.RED}    Attempts: {final_attempts:,} | Time: {elapsed:.2f}s | Speed: {rate:,.0f} h/s{Colors.RESET}")
+        print(f"{Colors.RED}    Attempts: {attempts:,} | Time: {elapsed:.2f}s | Speed: {rate:,.0f} h/s | Threads: {num_threads}{Colors.RESET}")
 
-        # Save not-found result to output file if specified
-        if output_file:
-            result_data = [{
-                "hash": target_hash,
-                "hash_type": hash_type,
-                "password": None,
-                "category": cat_name,
-                "attempts": final_attempts,
-                "time": elapsed,
-                "speed": rate,
-            }]
-            write_output(result_data, output_file, output_format)
-
-        return None
+    return result
 
 
 # ──────────────────────────────────────────────
 #  Batch Mode
 # ──────────────────────────────────────────────
-def crack_from_file(
-    file_path: str, wordlist_path: str, hash_type_override: Optional[str],
-    verbose: bool, num_threads: int = 4, no_thread: bool = False,
-    timeout: Optional[float] = None, output_file: Optional[str] = None,
-    output_format: str = "txt",
-):
+def crack_from_file(file_path: str, wordlist_path: str, hash_type_override: Optional[str], verbose: bool, num_threads: int = 5):
     if not os.path.isfile(file_path):
         print(f"{Colors.RED}[!] Hash file not found: {file_path}{Colors.RESET}")
-        return
+        return []
 
     with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
         lines = [l.strip() for l in f if l.strip()]
@@ -2098,7 +1519,11 @@ def crack_from_file(
             detected = detect_hash_type(target_hash)
             if not detected:
                 print(f"{Colors.RED}[!] Could not detect hash type for: {target_hash}{Colors.RESET}")
-                results.append((target_hash, None, None))
+                results.append({
+                    "hash": target_hash, "type": "", "category": "",
+                    "password": None, "attempts": 0, "time": 0.0,
+                    "speed": 0.0, "status": "not_found"
+                })
                 continue
             hash_type = detected[0][0]
             if len(detected) > 1:
@@ -2106,39 +1531,188 @@ def crack_from_file(
             else:
                 print(f"{Colors.YELLOW}[*] Detected: {hash_type}{Colors.RESET}")
 
-        pw = crack_single_hash(
-            target_hash, hash_type, wordlist_path, verbose,
-            num_threads=num_threads, no_thread=no_thread,
-            timeout=timeout, output_file=None,  # Defer writing; batch writes all at once
-            output_format=output_format,
-        )
-        results.append((target_hash, hash_type, pw))
+        res = crack_single_hash(target_hash, hash_type, wordlist_path, verbose, num_threads=num_threads)
+        results.append(res)
         print()
 
     print(f"\n{Colors.CYAN}{'='*60}{Colors.RESET}")
-    print(f"{Colors.CYAN}{Colors.BOLD}  DONHASH CRACKING SUMMARY{Colors.RESET}")
+    print(f"{Colors.CYAN}{Colors.BOLD}  CRACKING SUMMARY{Colors.RESET}")
     print(f"{Colors.CYAN}{'='*60}{Colors.RESET}")
-    cracked = sum(1 for _, _, p in results if p)
+    cracked = sum(1 for r in results if r.get("status") == "cracked")
     total = len(results)
-    for th, ht, pw in results:
+    for r in results:
+        pw = r.get("password")
         st = f"{Colors.GREEN}{pw}{Colors.RESET}" if pw else f"{Colors.RED}Not found{Colors.RESET}"
-        print(f"  {ht or 'Unknown':<25} | {th[:40]:<42} | {st}")
+        print(f"  {r.get('type', 'Unknown'):<25} | {r.get('hash', '')[:40]:<42} | {st}")
     if total:
         print(f"\n  Cracked: {Colors.GREEN}{cracked}{Colors.RESET}/{total} ({cracked/total*100:.0f}%)")
 
-    # Write batch results to output file
-    if output_file:
-        result_data = []
-        for th, ht, pw in results:
-            cat = HASH_DB.get(ht or "", {}).get("cat", 0)
-            cat_name = CATEGORY_NAMES.get(cat, "N/A")
-            result_data.append({
-                "hash": th,
-                "hash_type": ht or "Unknown",
-                "password": pw,
-                "category": cat_name,
-            })
-        write_output(result_data, output_file, output_format)
+    return results
+
+
+# ──────────────────────────────────────────────
+#  Output Writers
+# ──────────────────────────────────────────────
+SUPPORTED_FORMATS = ["txt", "json", "csv", "html", "xml", "md"]
+
+def detect_output_format(output_path: str, explicit_format: Optional[str] = None) -> str:
+    """Detect output format from file extension or use explicit format."""
+    if explicit_format:
+        return explicit_format.lower()
+    ext = os.path.splitext(output_path)[1].lstrip(".").lower()
+    if ext in SUPPORTED_FORMATS:
+        return ext
+    return "txt"  # default
+
+
+def write_output(results: list, output_path: str, fmt: str = "txt"):
+    """Write cracking results to a file in the specified format."""
+    if fmt == "txt":
+        _write_txt(results, output_path)
+    elif fmt == "json":
+        _write_json(results, output_path)
+    elif fmt == "csv":
+        _write_csv(results, output_path)
+    elif fmt == "html":
+        _write_html(results, output_path)
+    elif fmt == "xml":
+        _write_xml(results, output_path)
+    elif fmt == "md":
+        _write_markdown(results, output_path)
+    else:
+        _write_txt(results, output_path)
+
+    print(f"{Colors.GREEN}[+] Results written to: {output_path} ({fmt} format){Colors.RESET}")
+
+
+def _write_txt(results, path):
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("=" * 70 + "\n")
+        f.write("DonHash v1.1 - Cracking Results\n")
+        f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write("=" * 70 + "\n\n")
+        for r in results:
+            f.write(f"Hash     : {r['hash']}\n")
+            f.write(f"Type     : {r['type']}\n")
+            f.write(f"Category : {r['category']}\n")
+            f.write(f"Status   : {r['status']}\n")
+            if r['password']:
+                f.write(f"Password : {r['password']}\n")
+            else:
+                f.write("Password : (not found)\n")
+            f.write(f"Attempts : {r['attempts']:,}\n")
+            f.write(f"Time     : {r['time']}s\n")
+            f.write(f"Speed    : {r['speed']:,.0f} h/s\n")
+            f.write("-" * 70 + "\n")
+        cracked = sum(1 for r in results if r['status'] == 'cracked')
+        total = len(results)
+        pct = cracked / total * 100 if total else 0
+        f.write(f"\nSummary: {cracked}/{total} cracked ({pct:.0f}%)\n")
+
+
+def _write_json(results, path):
+    data = {
+        "tool": "DonHash",
+        "version": "1.1",
+        "generated": datetime.now().isoformat(),
+        "results": results,
+        "summary": {
+            "total": len(results),
+            "cracked": sum(1 for r in results if r['status'] == 'cracked'),
+            "not_found": sum(1 for r in results if r['status'] == 'not_found')
+        }
+    }
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+
+def _write_csv(results, path):
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=["hash", "type", "category", "status", "password", "attempts", "time", "speed"])
+        writer.writeheader()
+        for r in results:
+            writer.writerow(r)
+
+
+def _write_html(results, path):
+    cracked = sum(1 for r in results if r['status'] == 'cracked')
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DonHash v1.1 - Cracking Results</title>
+<style>
+  body {{ font-family: 'Segoe UI', Arial, sans-serif; background: #0a0a0a; color: #e0e0e0; margin: 0; padding: 20px; }}
+  h1 {{ color: #00ffcc; text-align: center; border-bottom: 2px solid #00ffcc; padding-bottom: 10px; }}
+  h2 {{ color: #ff6600; }}
+  .summary {{ background: #1a1a2e; padding: 15px; border-radius: 8px; margin: 20px 0; }}
+  table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
+  th {{ background: #16213e; color: #00ffcc; padding: 12px; text-align: left; }}
+  td {{ padding: 10px; border-bottom: 1px solid #333; }}
+  tr:hover {{ background: #1a1a2e; }}
+  .cracked {{ color: #00ff66; font-weight: bold; }}
+  .not-found {{ color: #ff4444; }}
+  .footer {{ text-align: center; color: #666; margin-top: 30px; font-size: 0.9em; }}
+</style>
+</head>
+<body>
+<h1>DonHash v1.1 - Cracking Results</h1>
+<div class="summary">
+  <p><strong>Generated:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+  <p><strong>Total:</strong> {len(results)} | <strong>Cracked:</strong> {cracked} | <strong>Not Found:</strong> {len(results) - cracked}</p>
+</div>
+<h2>Results</h2>
+<table>
+<tr><th>Hash</th><th>Type</th><th>Category</th><th>Status</th><th>Password</th><th>Attempts</th><th>Time</th><th>Speed</th></tr>
+"""
+    for r in results:
+        status_class = "cracked" if r['status'] == 'cracked' else "not-found"
+        pw = r['password'] if r['password'] else "(not found)"
+        html += f'<tr><td><code>{r["hash"][:60]}</code></td><td>{r["type"]}</td><td>{r["category"]}</td>'
+        html += f'<td class="{status_class}">{r["status"]}</td><td class="{status_class}">{pw}</td>'
+        html += f'<td>{r["attempts"]:,}</td><td>{r["time"]}s</td><td>{r["speed"]:,.0f} h/s</td></tr>\n'
+    html += """</table>
+<div class="footer">DonHash v1.1 | Author: CySec Don | cysecdon@gmail.com</div>
+</body></html>"""
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(html)
+
+
+def _write_xml(results, path):
+    root = ET.Element("donhash-results")
+    root.set("version", "1.1")
+    root.set("generated", datetime.now().isoformat())
+
+    summary = ET.SubElement(root, "summary")
+    ET.SubElement(summary, "total").text = str(len(results))
+    ET.SubElement(summary, "cracked").text = str(sum(1 for r in results if r['status'] == 'cracked'))
+
+    for r in results:
+        entry = ET.SubElement(root, "result")
+        for key in ["hash", "type", "category", "status", "password", "attempts", "time", "speed"]:
+            elem = ET.SubElement(entry, key)
+            val = r.get(key, "")
+            elem.text = str(val) if val is not None else ""
+
+    tree = ET.ElementTree(root)
+    ET.indent(tree, space="  ")
+    tree.write(path, encoding="unicode", xml_declaration=True)
+
+
+def _write_markdown(results, path):
+    cracked = sum(1 for r in results if r['status'] == 'cracked')
+    total = len(results)
+    pct = cracked / total * 100 if total else 0
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("# DonHash v1.1 - Cracking Results\n\n")
+        f.write(f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+        f.write(f"**Summary:** {cracked}/{total} cracked ({pct:.0f}%)\n\n")
+        f.write("| Hash | Type | Category | Status | Password | Attempts | Time | Speed |\n")
+        f.write("|------|------|----------|--------|----------|----------|------|-------|\n")
+        for r in results:
+            pw = r['password'] if r['password'] else "(not found)"
+            f.write(f"| `{r['hash'][:50]}` | {r['type']} | {r['category']} | {r['status']} | {pw} | {r['attempts']:,} | {r['time']}s | {r['speed']:,.0f} h/s |\n")
 
 
 # ──────────────────────────────────────────────
@@ -2146,8 +1720,7 @@ def crack_from_file(
 # ──────────────────────────────────────────────
 def find_rockyou() -> str:
     for p in ["/usr/share/wordlists/rockyou.txt", "/opt/rockyou.txt",
-              os.path.expanduser("~/rockyou.txt"), "./rockyou.txt",
-              "/usr/share/wordlists/rockyou.txt.gz"]:
+              os.path.expanduser("~/rockyou.txt"), "./rockyou.txt"]:
         if os.path.isfile(p): return p
     return "rockyou.txt"
 
@@ -2181,43 +1754,20 @@ def list_hash_types(filter_cat: Optional[int] = None):
 
 def main():
     parser = argparse.ArgumentParser(
-        prog="donhash",
-        description=f"DonHash v{VERSION} — Hash Detector & Cracker — 500+ hash types, 30 categories",
+        description="DonHash v1.1 — Hash Detector & Cracker — 500+ hash types, 30 categories",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=f"""
-DonHash v{VERSION} by {AUTHOR} ({EMAIL})
-
-Output Formats (use with -o):
-  txt       Plain text with headers (default)
-  json      Structured JSON with metadata
-  csv       Comma-separated values (spreadsheet-friendly)
-  html      Styled HTML report (dark theme, cyberpunk look)
-  xml       XML document with structured results
-  markdown  GitHub-flavored Markdown table
-  yaml      YAML serialization
-
+        epilog="""
 Examples:
   %(prog)s -H 5f4dcc3b5aa765d61d8327deb882cf99
   %(prog)s -H 5f4dcc3b5aa765d61d8327deb882cf99 -t md5
   %(prog)s -H 5f4dcc3b5aa765d61d8327deb882cf99 -w custom_wordlist.txt
-  %(prog)s -H 5f4dcc3b5aa765d61d8327deb882cf99 -T 8 -v
-  %(prog)s -H md5... -t PostgreSQL-MD5 -s postgres_username
-  %(prog)s -f hashes.txt -w rockyou.txt -v -T 16
-  %(prog)s -H 5f4dcc3b5aa765d61d8327deb882cf99 -o results.json --format json
-  %(prog)s -H 5f4dcc3b5aa765d61d8327deb882cf99 -o report.html --format html
-  %(prog)s -f hashes.txt -o batch_results.csv --format csv
-  %(prog)s -f hashes.txt -o report.md --format markdown
+  %(prog)s -H 5f4dcc3b5aa765d61d8327deb882cf99 -T 20 -o results.json
+  %(prog)s -f hashes.txt -w rockyou.txt -v -T 10
+  %(prog)s -f hashes.txt -o results.html
+  %(prog)s -f hashes.txt -o output.csv --format csv
   %(prog)s --list-categories
   %(prog)s --list-types
   %(prog)s --list-types --category 3
-  %(prog)s --wordlist-info rockyou.txt
-
-Disclaimer:
-  This tool is intended for authorized security testing and educational
-  purposes ONLY. Unauthorized use of this tool to crack passwords or
-  hashes without explicit permission is ILLEGAL and UNETHICAL. The
-  author assumes no liability for misuse. Always obtain proper
-  authorization before testing any system.
         """,
     )
 
@@ -2225,27 +1775,20 @@ Disclaimer:
     input_group.add_argument("-H", "--hash", dest="target_hash", help="Single hash to crack")
     input_group.add_argument("-f", "--file", help="File with hashes (one per line)")
 
-    parser.add_argument("-w", "--wordlist", default=None,
-                        help="Path to wordlist (default: rockyou.txt). Supports .gz compressed files.")
+    parser.add_argument("-w", "--wordlist", default=None, help="Path to wordlist (default: rockyou.txt)")
     parser.add_argument("-t", "--type", dest="hash_type", help="Force a specific hash type")
-    parser.add_argument("-s", "--salt", default="", help="Salt for salted hash types (for PostgreSQL-MD5, use the username)")
+    parser.add_argument("-s", "--salt", default="", help="Salt for salted hash types")
+    parser.add_argument("-T", "--threads", type=int, default=5, choices=range(1, 101),
+                        metavar="1-100", help="Number of threads for cracking (default: 5)")
+    parser.add_argument("-o", "--output", help="Output file path for results")
+    parser.add_argument("--format", dest="output_format", default=None,
+                        choices=["txt", "json", "csv", "html", "xml", "md"],
+                        help="Output format (default: auto-detect from file extension)")
     parser.add_argument("-v", "--verbose", action="store_true", help="Show progress while cracking")
-    parser.add_argument("-T", "--threads", type=int, default=4, metavar="N",
-                        help="Number of threads for cracking (default: 4, max: 32)")
-    parser.add_argument("--no-thread", action="store_true", help="Disable multi-threading (single-threaded mode)")
-    parser.add_argument("--timeout", type=float, default=None, metavar="SECS",
-                        help="Max cracking time in seconds per hash")
-    parser.add_argument("-o", "--output", default=None, metavar="FILE",
-                        help="Save results to file (format determined by --format, default: txt)")
-    parser.add_argument("--format", dest="output_format", default="txt",
-                        choices=SUPPORTED_FORMATS,
-                        help=f"Output format: {', '.join(SUPPORTED_FORMATS)} (default: txt)")
     parser.add_argument("--detect-only", action="store_true", help="Only detect hash type(s)")
     parser.add_argument("--list-categories", action="store_true", help="List all 30 categories")
     parser.add_argument("--list-types", action="store_true", help="List all hash types")
     parser.add_argument("--category", type=int, default=None, help="Filter by category number (1-30)")
-    parser.add_argument("--wordlist-info", default=None, metavar="FILE",
-                        help="Show wordlist statistics (line count, file size)")
 
     args = parser.parse_args()
 
@@ -2257,10 +1800,6 @@ Disclaimer:
         list_hash_types(args.category)
         return
 
-    if args.wordlist_info:
-        wordlist_info(args.wordlist_info)
-        return
-
     if not args.target_hash and not args.file:
         parser.print_help()
         return
@@ -2268,16 +1807,6 @@ Disclaimer:
     print_banner()
 
     wordlist = args.wordlist or find_rockyou()
-
-    # Validate wordlist early
-    is_valid, msg = validate_wordlist(wordlist)
-    if not is_valid and not args.detect_only:
-        print(f"{Colors.RED}[!] {msg}{Colors.RESET}")
-        print(f"{Colors.YELLOW}[*] Download rockyou.txt or specify a wordlist with -w{Colors.RESET}")
-        sys.exit(1)
-
-    # Clamp thread count
-    num_threads = max(1, min(args.threads, 32))
 
     # ── Detect-only mode ──
     if args.detect_only:
@@ -2320,15 +1849,14 @@ Disclaimer:
                 print(f"{Colors.YELLOW}[*] {len(detected)} possible types detected. Using: {hash_type} (most likely){Colors.RESET}")
                 print(f"{Colors.YELLOW}[*] Override with -t flag. Use --list-types to see all.{Colors.RESET}")
 
-        crack_single_hash(
-            target_hash, hash_type, wordlist, args.verbose,
-            ext_salt=args.salt,
-            num_threads=num_threads,
-            no_thread=args.no_thread,
-            timeout=args.timeout,
-            output_file=args.output,
-            output_format=args.output_format,
-        )
+        result = crack_single_hash(target_hash, hash_type, wordlist, args.verbose,
+                                   ext_salt=args.salt, num_threads=args.threads)
+
+        # Handle output
+        if args.output:
+            results = [result] if result else []
+            fmt = detect_output_format(args.output, args.output_format)
+            write_output(results, args.output, fmt)
 
     # ── File mode ──
     elif args.file:
@@ -2337,14 +1865,13 @@ Disclaimer:
             matches = [k for k in HASH_DB if k.lower() == hash_type_override.lower()]
             if matches:
                 hash_type_override = matches[0]
-        crack_from_file(
-            args.file, wordlist, hash_type_override, args.verbose,
-            num_threads=num_threads,
-            no_thread=args.no_thread,
-            timeout=args.timeout,
-            output_file=args.output,
-            output_format=args.output_format,
-        )
+        results = crack_from_file(args.file, wordlist, hash_type_override, args.verbose,
+                                  num_threads=args.threads)
+
+        # Handle output
+        if args.output and results:
+            fmt = detect_output_format(args.output, args.output_format)
+            write_output(results, args.output, fmt)
 
 
 if __name__ == "__main__":
