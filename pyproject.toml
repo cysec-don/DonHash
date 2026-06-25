@@ -7,7 +7,7 @@ name = "donhash"
 version = "2.1.0"
 description = "Advanced hash detector & cracker — 491 hash types across 30 categories"
 readme = "README.md"
-license = { text = "MIT" }
+license = { text = "DonHash Attribution License v1.0 (MIT + attribution)" }
 authors = [
     { name = "CySec Don", email = "cysecdon@gmail.com" },
 ]
@@ -21,7 +21,7 @@ classifiers = [
     "Environment :: Console",
     "Intended Audience :: Information Technology",
     "Intended Audience :: System Administrators",
-    "License :: OSI Approved :: MIT License",
+    "License :: Other/Proprietary License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",

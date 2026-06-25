@@ -3,15 +3,15 @@
 **Advanced Hash Detector & Cracker** — 491 hash types across 30 categories, multi-threaded cracking, multi-format output, pure-Python MD4 for NTLM/NT on every modern Python.
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python&logoColor=white)
-![License](https://img.shields.io/badge/License-MIT-green)
+![License](https://img.shields.io/badge/License-DH--AL%20v1.0-orange)
 ![Hash Types](https://img.shields.io/badge/Hash%20Types-491-orange)
 ![Version](https://img.shields.io/badge/Version-2.1.0-cyan)
-![Tests](https://img.shields.io/badge/Tests-836%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-860%20passing-brightgreen)
 ![Coverage](https://img.shields.io/badge/Coverage-77%25-brightgreen)
 ![Lint](https://img.shields.io/badge/Lint-ruff%20clean-brightgreen)
 
 **Author:** CySec Don — [cysecdon@gmail.com](mailto:cysecdon@gmail.com)
-**License:** MIT — see [LICENSE](LICENSE)
+**License:** DonHash Attribution License v1.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE)
 
 ---
 
@@ -28,6 +28,7 @@
 - [Development](#development)
 - [Architecture](#architecture)
 - [Security Notes](#security-notes)
+- [License](#license)
 - [Disclaimer](#disclaimer)
 - [Changelog](#changelog)
 
@@ -488,6 +489,56 @@ NTLM hashes (`MD4(UTF-16LE(password))`) are extremely common in Windows password
 - **Path safety** — File paths come from CLI args (user-controlled). No path traversal risk because the user is the one running the tool.
 - **Constant-time hash comparison** — Not implemented. DonHash is a password cracker, not an authentication system; the threat model doesn't require constant-time comparison.
 - **Optional dependencies** — bcrypt, argon2-cffi, passlib, pycryptodome are all well-known, actively-maintained libraries. Verify checksums when installing.
+
+---
+
+## License
+
+DonHash is licensed under the **DonHash Attribution License v1.0 (DH-AL)** — see [LICENSE](LICENSE) for the full text and [NOTICE](NOTICE) for third-party acknowledgments.
+
+### What this means in plain English
+
+You are **free to**:
+- ✅ Use DonHash for personal, educational, or commercial purposes
+- ✅ Modify, fork, and distribute the code
+- ✅ Include DonHash in your own projects (open-source or proprietary)
+- ✅ Sell products or services that use DonHash
+
+You **must**:
+- ⚠️ **Attribute CySec Don (cysecdon@gmail.com)** in a prominent location of any copy, fork, update, or derivative work
+- ⚠️ Include the following attribution in your README, NOTICE, or primary documentation:
+
+  ```
+  This software is based on DonHash by CySec Don (cysecdon@gmail.com).
+  Original source: https://github.com/cysec-don/DonHash
+  ```
+
+- ⚠️ Retain the copyright notice and license text in all source files
+- ⚠️ For commercial use: include the attribution in your product's "About" / "Credits" section AND in your end-user license agreement or terms of service
+
+You **may not**:
+- ❌ Remove, alter, or obscure the attribution in source files
+- ❌ Use the names "CySec Don", "cysecdon", or "DonHash" to endorse or promote your product without prior written consent
+- ❌ Distribute modified versions without including this License in full
+
+### Why an attribution license?
+
+The author believes open source should be free to use, including commercially — but that derivative works should give credit to the original. The DH-AL is a lightweight alternative to the GPL that doesn't impose copyleft (you can use DonHash in proprietary software) but does require attribution (you can't pass the work off as your own).
+
+### Commercial licensing
+
+If your use case requires a different license (e.g., no attribution requirement, or a custom commercial license), contact the author at [cysecdon@gmail.com](mailto:cysecdon@gmail.com).
+
+### Compliance checklist
+
+Before distributing any derivative work, verify:
+
+- [ ] LICENSE file from DonHash is included in your distribution
+- [ ] NOTICE file from DonHash is included (or merged into your own NOTICE)
+- [ ] Attribution text appears in your README or primary documentation
+- [ ] Source file headers are retained (don't strip them when copying code)
+- [ ] For commercial products: attribution appears in the "About" / "Credits" section AND in the EULA/TOS
+- [ ] You are NOT using "CySec Don", "cysecdon", or "DonHash" as a product name or in marketing without written consent
 
 ---
 

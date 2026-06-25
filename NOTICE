@@ -1,0 +1,46 @@
+DonHash
+=======
+
+Copyright (c) 2026 CySec Don (cysecdon@gmail.com)
+
+This product includes software developed by CySec Don
+(https://github.com/cysec-don).
+
+Original source: https://github.com/cysec-don/DonHash
+
+License: DonHash Attribution License v1.0 (see LICENSE file for full text)
+
+Attribution Requirement
+-----------------------
+
+Any copy, fork, update, modification, or commercial application of this
+software MUST include the following attribution in a prominent location:
+
+    "This software is based on DonHash by CySec Don (cysecdon@gmail.com).
+     Original source: https://github.com/cysec-don/DonHash"
+
+For the full terms of the attribution requirement, see Sections 1-3 of the
+LICENSE file.
+
+Third-Party Acknowledgments
+---------------------------
+
+This software uses the following third-party components (all optional):
+
+- bcrypt (https://github.com/pyca/bcrypt) — Apache 2.0 License
+- argon2-cffi (https://github.com/hynek/argon2-cffi) — MIT License
+- passlib (https://passlib.readthedocs.io/) — BSD License
+- pycryptodome (https://www.pycryptodome.org/) — BSD License / Public Domain
+
+The pure-Python MD4 implementation in this software is based on RFC 1320
+(R. Rivest, 1992). The pure-Python CRC-32 / CRC-32C implementations follow
+the algorithms specified by W. Brown, G. Castagnoli, et al.
+
+Contact
+-------
+
+For questions about licensing, commercial use, or attribution:
+
+    CySec Don
+    Email: cysecdon@gmail.com
+    GitHub: https://github.com/cysec-don

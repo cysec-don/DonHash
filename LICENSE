@@ -1,6 +1,7 @@
-MIT License
+DonHash Attribution License (DH-AL) v1.0
+==========================================
 
-Copyright (c) 2025 CySec Don (cysecdon@gmail.com)
+Copyright (c) 2026 CySec Don (cysecdon@gmail.com)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -9,13 +10,83 @@ to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 copies of the Software, and to permit persons to whom the Software is
 furnished to do so, subject to the following conditions:
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+1. ATTRIBUTION REQUIREMENT.
+   All copies, derivatives, forks, updates, modifications, or commercial
+   applications of the Software (in whole or in part) MUST retain the
+   following attribution in a prominent location:
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+       "This software is based on DonHash by CySec Don (cysecdon@gmail.com).
+        Original source: https://github.com/cysec-don/DonHash"
+
+   The attribution MUST appear:
+   (a) In the NOTICE file, LICENSE file, or equivalent attribution file of
+       any derivative work;
+   (b) In the user-facing documentation (README, help text, about box,
+       splash screen, or equivalent) of any derivative work;
+   (c) In the source code header of any file that contains a substantial
+       portion of the original Software (defined as >= 20 lines of original
+       code);
+   (d) In the case of commercial use, in the "About" or "Credits" section
+       of the product, AND in the end-user license agreement or terms of
+       service, if any.
+
+2. FORK AND UPDATE ACKNOWLEDGMENT.
+   Any fork, branch, derivative, or updated version of the Software MUST:
+   (a) Acknowledge the original author "CySec Don (cysecdon@gmail.com)" in
+       the README, NOTICE, or primary documentation file;
+   (b) Include a link to the original repository at
+       https://github.com/cysec-don/DonHash;
+   (c) NOT remove, alter, or obscure the attribution in any source file
+       that contains the original or substantially-similar code;
+   (d) Include this License in full in the derivative work.
+
+3. COMMERCIAL USE ACKNOWLEDGMENT.
+   Commercial use of the Software (in whole or in part) is permitted
+   provided that:
+   (a) The attribution in Section 1(d) is included;
+   (b) The author "CySec Don (cysecdon@gmail.com)" is credited in any
+       marketing material, documentation, or "About" section that mentions
+       the Software's capabilities;
+   (c) The commercial product's LICENSE file or terms of service reference
+       this License and the original repository URL.
+
+4. NO ENDORSEMENT.
+   The name "CySec Don", "cysecdon", "DonHash", and the names of its
+   contributors may NOT be used to endorse or promote products, services,
+   or derivative works without prior written consent from the author.
+
+5. COPYRIGHT NOTICE RETENTION.
+   The above copyright notice and this permission notice MUST be included
+   in all copies or substantial portions of the Software.
+
+6. NO WARRANTY.
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+   OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+   THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+   DEALINGS IN THE SOFTWARE.
+
+7. VIOLATIONS.
+   Failure to comply with any of the conditions of this License, including
+   failure to provide the required attribution, automatically terminates
+   the rights granted under this License and may constitute copyright
+   infringement. The author reserves the right to enforce this License
+   through any legal means available.
+
+---
+
+For questions about this License, commercial licensing, or to request
+permission for uses not covered above, contact:
+
+    CySec Don
+    Email: cysecdon@gmail.com
+    GitHub: https://github.com/cysec-don
+
+This License is based on the MIT License with additional attribution
+requirements. It is not OSI-approved; downstream users should consult
+their legal counsel if they have questions about compatibility with
+other licenses.
+
+SPDX-License-Identifier: MIT + DonHash-Attribution-1.0
