@@ -1,0 +1,167 @@
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "donhash"
+version = "2.1.0"
+description = "Advanced hash detector & cracker — 491 hash types across 30 categories"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "CySec Don", email = "cysecdon@gmail.com" },
+]
+requires-python = ">=3.10"
+keywords = [
+    "hash", "hash-detection", "password-cracker", "security",
+    "penetration-testing", "forensics", "ctf", "cryptography",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Topic :: Security :: Cryptography",
+    "Topic :: Utilities",
+    "Typing :: Typed",
+]
+dependencies = [
+    # Pure stdlib at runtime; optional libs loaded lazily for bcrypt/argon2/passlib
+]
+
+[project.optional-dependencies]
+bcrypt = ["bcrypt>=4.0"]
+argon2 = ["argon2-cffi>=21.0"]
+passlib = ["passlib>=1.7"]
+all = ["bcrypt>=4.0", "argon2-cffi>=21.0", "passlib>=1.7"]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-xdist>=3.0",
+    "ruff>=0.6",
+    "mypy>=1.10",
+    "types-requests",
+    "bcrypt>=4.0",
+    "argon2-cffi>=21.0",
+    "passlib>=1.7",
+]
+
+[project.urls]
+Homepage = "https://github.com/cysec-don/DonHash"
+Repository = "https://github.com/cysec-don/DonHash"
+Issues = "https://github.com/cysec-don/DonHash/issues"
+
+[project.scripts]
+donhash = "donhash.cli:main"
+donhash-cli = "donhash.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/donhash"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/donhash", "tests", "README.md", "LICENSE", "pyproject.toml"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = [".git", "__pycache__", "build", "dist"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # bugbear
+    "C4",  # comprehensions
+    "UP",  # pyupgrade
+    "N",   # pep8-naming
+    "SIM", # simplify
+    "RUF", # ruff-specific
+    "S",   # bandit (security)
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "S101",   # use of assert (fine in tests)
+    "S311",   # pseudo-random for crypto (we use secrets where needed)
+    "S603",   # subprocess calls (we don't shell out)
+    "S607",   # partial executable path (we don't shell out)
+    "B008",   # function call in defaults (argparse idiomatic)
+    # DonHash is a hash *cracker* — it legitimately uses "insecure" hash
+    # functions (MD5, SHA1, MD4, etc.) by design. These are not vulnerabilities
+    # in the tool; they are the tool's purpose.
+    "S324",   # hashlib-insecure-hash-function
+    "S304",   # suspicious-insecure-cipher-usage (DES for LM hash)
+    # We write XML output, not parse untrusted XML — ElementTree is safe here.
+    "S314",   # suspicious-xml-element-tree-usage
+    # Allow non-lowercase variable names for hash names that include
+    # uppercase letters by convention (e.g., SHA256, MD5).
+    "N806",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S105", "S106", "D", "PLR2004", "S324", "S304", "S314"]
+"src/donhash/_hash_db.py" = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--cov=donhash",
+    "--cov-report=term-missing",
+    "--cov-report=html:htmlcov",
+    "--cov-report=xml",
+]
+testpaths = ["tests"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: integration tests that exercise the full CLI",
+]
+
+[tool.coverage.run]
+source = ["src/donhash"]
+branch = true
+omit = ["*/tests/*", "*/__main__.py"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
+# Coverage target — 60% is achievable given the architecture:
+#   - 360 of 491 hash types are intentionally DETECT-only (no compute impl)
+#   - Many code paths require optional deps (bcrypt/argon2/passlib/pycryptodome)
+#     that aren't installed in the base test environment
+# The hash DB, detector, output writers, cracker, and CLI all achieve 80%+.
+fail_under = 60
+show_missing = true
+
+[tool.mypy]
+python_version = "3.10"
+strict = false
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unused_configs = true
+disallow_untyped_defs = false  # we'll tighten this over time
+ignore_missing_imports = true
+files = ["src/donhash"]
+
+[[tool.mypy.overrides]]
+module = "donhash._hash_db"
+ignore_errors = true
